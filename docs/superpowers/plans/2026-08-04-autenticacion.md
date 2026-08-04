@@ -264,21 +264,30 @@ git commit -m "feat: add DB-backed session module (create/validate/destroy)"
 
 ---
 
-### Task 4: Helper de servidor `getCurrentUser`
+### Task 4: Constante de cookie y helper de servidor `getCurrentUser`
 
 **Files:**
+- Create: `src/lib/auth/constants.ts`
 - Create: `src/lib/auth/currentUser.ts`
 
-Este helper es el punto único que las páginas protegidas llaman para saber quién es el usuario logueado. No tiene test de integración propio porque es una envoltura fina sobre `getSessionUser` (ya testeado) leyendo la cookie vía `next/headers` — se cubre con las pruebas manuales de las Tasks 6-7.
+`SESSION_COOKIE_NAME` vive en su propio archivo, sin más imports, a propósito: el middleware (Task 5) corre en el Edge Runtime, que no soporta el driver de Postgres (`pg` usa APIs de Node como `net`/`tls`). Si el middleware importara `currentUser.ts` (que importa `session.ts`, que importa `db.ts`), el build del Edge Runtime se rompe. `constants.ts` es el único módulo que el middleware puede importar de esta carpeta sin arrastrar la base.
 
-- [ ] **Step 1: Implementar**
+`getCurrentUser` es el punto único que las páginas protegidas llaman para saber quién es el usuario logueado. No tiene test de integración propio porque es una envoltura fina sobre `getSessionUser` (ya testeado) leyendo la cookie vía `next/headers` — se cubre con las pruebas manuales de las Tasks 6-7.
+
+- [ ] **Step 1: Implementar la constante**
+
+```typescript
+// src/lib/auth/constants.ts
+export const SESSION_COOKIE_NAME = "malaga_session";
+```
+
+- [ ] **Step 2: Implementar el helper**
 
 ```typescript
 // src/lib/auth/currentUser.ts
 import { cookies } from "next/headers";
 import { getSessionUser, type SessionUser } from "./session";
-
-export const SESSION_COOKIE_NAME = "malaga_session";
+import { SESSION_COOKIE_NAME } from "./constants";
 
 export async function getCurrentUser(): Promise<SessionUser | null> {
   const cookieStore = await cookies();
@@ -288,10 +297,10 @@ export async function getCurrentUser(): Promise<SessionUser | null> {
 }
 ```
 
-- [ ] **Step 2: Commit**
+- [ ] **Step 3: Commit**
 
 ```bash
-git add src/lib/auth/currentUser.ts
+git add src/lib/auth/constants.ts src/lib/auth/currentUser.ts
 git commit -m "feat: add getCurrentUser server helper"
 ```
 
@@ -310,7 +319,7 @@ El middleware solo chequea que la cookie de sesión exista (chequeo barato, corr
 // src/middleware.ts
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { SESSION_COOKIE_NAME } from "./lib/auth/currentUser";
+import { SESSION_COOKIE_NAME } from "./lib/auth/constants";
 
 const PUBLIC_PATHS = ["/login"];
 
@@ -361,7 +370,7 @@ import { redirect } from "next/navigation";
 import { query } from "@/lib/db";
 import { verifyPassword } from "@/lib/auth/password";
 import { createSession } from "@/lib/auth/session";
-import { SESSION_COOKIE_NAME } from "@/lib/auth/currentUser";
+import { SESSION_COOKIE_NAME } from "@/lib/auth/constants";
 
 export async function login(_prevState: { error?: string } | undefined, formData: FormData) {
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
@@ -486,7 +495,7 @@ git commit -m "feat: add login page and server action"
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { destroySession } from "@/lib/auth/session";
-import { SESSION_COOKIE_NAME } from "@/lib/auth/currentUser";
+import { SESSION_COOKIE_NAME } from "@/lib/auth/constants";
 
 export async function logout() {
   const cookieStore = await cookies();
