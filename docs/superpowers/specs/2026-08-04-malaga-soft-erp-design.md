@@ -60,6 +60,7 @@ Malaga Soft es un ERP nuevo, desarrollado 100% con Claude, para una heladería c
 | `id_prod` | PK |
 | `detalle`, `sector`, `familia`, `unid_med` | |
 | `tipo_producto` | PT / SEMI (deja lugar a MP a futuro) |
+| `peso_estandar` | **obligatorio si `tipo_producto = PT`**. Peso estándar de una bacha de ese sabor (varía por producto según decoración/densidad). Usado por la planificación diaria para traducir un faltante en kg a una cantidad de OP a crear (ver sección 7) |
 | `activo` | |
 
 ### `recetas`
@@ -86,7 +87,7 @@ Malaga Soft es un ERP nuevo, desarrollado 100% con Claude, para una heladería c
 | `id_op` | PK |
 | `id_prod` | FK `d_productos`, qué se produce |
 | `id_receta` | FK `recetas` |
-| `cant_plan`, `cant_real` | planificado vs. rendimiento real |
+| `cant_plan`, `cant_real` | planificado vs. rendimiento real. **Cada OP genera exactamente una partida** (relación 1:1 con `f_partidas_stock`, ver abajo). Para PT, `cant_plan` normalmente es igual al `peso_estandar` del producto (una OP = una bacha); si hace falta más cantidad, se crean varias OP en vez de una OP más grande |
 | `fecha_plan`, `fecha_real` | |
 | `ts_ini`, `ts_fin` | |
 | `user_ini`, `user_fin` | |
@@ -103,7 +104,7 @@ Ledger de lotes físicos de PT y SEMI. La lógica de "vigencia" difiere por tipo
 | `cantidad` | (antes "peso"; genérico para admitir unidades no-peso) |
 | `fecha_fab`, `lote` | |
 | `ts_ingreso` | alta de la partida |
-| `id_op_origen` | FK `f_ordenes_produccion`, qué OP generó esta partida |
+| `id_op_origen` | FK `f_ordenes_produccion`, **única** (una OP no puede generar más de una partida) |
 | `ts_exhibicion`, `id_exhibidora`, `user_exhibicion` | **solo PT**: cuándo y en qué slot se exhibió |
 | `ts_baja_manual`, `motivo_baja_manual`, `user_baja_manual` | **solo SEMI** en v1: cierre del remanente (ver sección 7). `motivo_baja_manual`: `scrap` / `vencido` / `ajuste` |
 | `sucursal` | preparado para multi-sucursal futuro |
@@ -134,14 +135,22 @@ Ledger de lotes físicos de PT y SEMI. La lógica de "vigencia" difiere por tipo
 ## 6. Módulos funcionales
 
 1. **Recetas** — alta/edición versionada, multinivel (una receta puede referenciar semielaborados con receta propia).
-2. **Órdenes de producción** — creación contra una receta, registro de inicio/fin, cantidad real vs. planificada, genera partida(s) de stock al confirmarse.
+2. **Órdenes de producción** — creación contra una receta, registro de inicio/fin, cantidad real vs. planificada, genera exactamente una partida de stock al confirmarse. Para PT, se crean normalmente al `peso_estandar` del producto.
 3. **Stock PT y SEMI** — vista en vivo, con lógica de vigencia distinta por tipo (ver sección 7). Es un ledger de movimientos, no un contador editable a mano. Incluye la acción, habitual (no excepcional), de cerrar el remanente de una partida de SEMI como scrap cuando queda un resto no aprovechable (consumo por receta rara vez agota el lote exacto a cero).
 4. **Trazabilidad** — desde cualquier partida (PT o SEMI) se puede reconstruir qué OP la generó y en qué OP se consumió, lote a lote.
 5. **Cartilla / exhibidora** — gestión de los 24 slots activos, alta/baja de sabores, cambios de carta programados, mínimo objetivo por slot.
-6. **Planificación diaria (PCP v1)** — cruza stock vivo de PT contra `d_exhibidora` (sabor activo + mínimo) y sugiere qué producir al día siguiente. Basado en reglas simples, no en pronóstico de demanda.
+6. **Planificación diaria (PCP v1)** — cruza stock vivo de PT contra `d_exhibidora` (sabor activo + mínimo) y sugiere qué producir al día siguiente. Basado en reglas simples, no en pronóstico de demanda. El faltante en kg se traduce a una cantidad de OP a crear, redondeando siempre hacia arriba en unidades del `peso_estandar` del producto (ver sección 7) — la sugerencia final es "cuántas OP crear", no un kilaje suelto.
 7. **Usuarios y roles** — login, roles `produccion`/`gestion`/`admin`.
 
 ## 7. Reglas de negocio clave: ciclo de vida de una partida
+
+**Una OP = una partida.** Toda orden de producción, al confirmarse, genera exactamente una partida de stock (`f_partidas_stock.id_op_origen` es única). No existe el caso de una OP que reparta su producción en varias partidas.
+
+**PT y bachas de peso estándar.** Producto terminado en v1 es únicamente helado, vendido en bachas. Cada producto PT tiene un `peso_estandar` (el peso típico de su bacha, que varía según decoración/densidad del sabor). La planificación diaria no sugiere "producir X kg": sugiere "crear N OP", calculando:
+
+> bachas_sugeridas = CEIL(faltante_kg / peso_estandar) → N OP de `peso_estandar` cada una
+
+Ejemplo: faltan 10 kg de pistacho, `peso_estandar` de pistacho = 4 kg → se sugieren 3 OP (12 kg totales). Producir de más por este redondeo es esperado y aceptado, no es un error a corregir — nunca se sugiere una OP de tamaño no estándar para "ajustar" el sobrante.
 
 **PT (producto terminado):** se mueve como unidad completa, nunca se divide. Una partida deja de estar "vigente en vitrina" cuando **otra partida ocupa el mismo `id_exhibidora`** (mismo sabor repuesto o cambio de carta) — esto se calcula en consulta (vista), no se guarda como campo editado a mano. v1 no contempla baja manual anticipada de PT (se evaluó y se decidió dejarla fuera).
 
