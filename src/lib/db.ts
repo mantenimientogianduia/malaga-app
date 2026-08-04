@@ -6,10 +6,16 @@ const pool = new Pool({
   database: process.env.PGDATABASE,
   user: process.env.PGUSER,
   password: process.env.PGPASSWORD,
-  // Verificación de certificado SIEMPRE activa. Si el servidor usa un certificado
-  // autofirmado, no desactivar rejectUnauthorized: en cambio, apuntar PGSSLROOTCERT
-  // al archivo de la CA y cargarlo acá (fs.readFileSync(process.env.PGSSLROOTCERT)).
-  ssl: process.env.PGSSLMODE === "require" ? { rejectUnauthorized: true } : undefined,
+  // Verificación de certificado SIEMPRE activa (rejectUnauthorized: true — nunca
+  // desactivar esto). La CA de Cloud SQL se confía vía NODE_EXTRA_CA_CERTS, no acá.
+  // checkServerIdentity se omite a propósito: el certificado de Cloud SQL está
+  // emitido para un nombre interno de Google (*.sql.goog), no para la IP pública
+  // con la que nos conectamos sin el Cloud SQL Auth Proxy. La cadena de confianza
+  // (CA) se sigue validando igual; sólo se salta la comparación exacta de hostname.
+  ssl:
+    process.env.PGSSLMODE === "require"
+      ? { rejectUnauthorized: true, checkServerIdentity: () => undefined }
+      : undefined,
   options: `-c search_path=${process.env.PG_SCHEMA ?? "malaga"}`,
 });
 

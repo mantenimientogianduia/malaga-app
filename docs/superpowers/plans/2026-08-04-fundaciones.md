@@ -31,6 +31,15 @@ REVOKE ALL ON SCHEMA g360 FROM malaga_app;
 
 Guardar el password generado en el gestor de secretos que uses (no en el repo). El resto de este plan asume que `PGUSER=malaga_app` y que ese rol solo puede tocar el esquema `malaga`.
 
+**Notas de conexión específicas de Google Cloud SQL (confirmado ejecutando esta fase contra la base real):**
+
+1. **CA del servidor.** Cloud SQL firma su certificado con una CA propia. Descargarla desde la consola (instancia → **Connections** → **Security** → certificado del servidor) y guardarla como `malaga-soft/certs/server-ca.pem` (ya cubierto por `*.pem` en `.gitignore`, no se commitea). Para que Node la confíe, correr los comandos que tocan la base con `NODE_EXTRA_CA_CERTS` apuntando a ese archivo — nunca desactivar `rejectUnauthorized`.
+2. **Verificación de hostname.** El certificado de Cloud SQL está emitido para un nombre interno (`*.sql.goog`), no para la IP pública. Conectando directo por IP (sin el Cloud SQL Auth Proxy), la verificación estricta de hostname (`sslmode=require` tratado como `verify-full`) siempre falla con `ERR_TLS_CERT_ALTNAME_INVALID`. Dos ajustes, ambos mantienen la validación de la cadena de certificado contra la CA — solo se salta la comparación de hostname:
+   - En `DATABASE_URL` (usado por `node-pg-migrate`): agregar `uselibpqcompat=true` a la query string, ej. `...?uselibpqcompat=true&sslmode=require`.
+   - En `src/lib/db.ts` (usado por la app, con `ssl` como objeto en vez de connection string): agregar `checkServerIdentity: () => undefined` junto a `rejectUnauthorized: true`.
+3. **Esquema de las migraciones.** `node-pg-migrate` intenta crear su tabla de control (`pgmigrations`) en el esquema `public` por defecto — y `malaga_app` no tiene permisos ahí (correcto, es el aislamiento funcionando). Los scripts `migrate:up`/`migrate:down` deben incluir `--schema malaga`.
+4. **Tests de integración en serie.** Como pegan contra la misma base compartida real (no hay una base de test descartable), correr los archivos de test en paralelo produce deadlocks y datos pisados entre tests. `vitest.config.ts` debe tener `fileParallelism: false`.
+
 ---
 
 ### Task 1: Scaffold del proyecto Next.js + TypeScript
