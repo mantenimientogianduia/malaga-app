@@ -43,6 +43,12 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
           >
             Órdenes
           </Link>
+          <Link
+            href="/stock"
+            className="rounded-md px-3 py-2 text-sm font-medium text-[#cfc3ac] hover:bg-white/5 hover:text-[#f6ecd9]"
+          >
+            Stock
+          </Link>
         </nav>
 
         <div className="mt-auto flex flex-col gap-3 text-[11px] text-[#8a9a90]">
