@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "test": "cross-env NODE_EXTRA_CA_CERTS=./certs/server-ca.pem vitest",
+    "test:db": "cross-env NODE_EXTRA_CA_CERTS=./certs/server-ca.pem RUN_DESTRUCTIVE_DB_TESTS=true vitest",
     "migrate:up": "cross-env NODE_EXTRA_CA_CERTS=./certs/server-ca.pem node-pg-migrate up --schema malaga",
     "migrate:down": "cross-env NODE_EXTRA_CA_CERTS=./certs/server-ca.pem node-pg-migrate down --schema malaga",
     "migrate:create": "node-pg-migrate create",

@@ -650,3 +650,13 @@ git commit -m "feat: add create-user script for onboarding the first admin"
 **3. Consistencia de tipos:** `SessionUser.rol` usa el mismo union type `"produccion" | "gestion" | "admin"` en `session.ts` y se reutiliza sin redefinir en `currentUser.ts` (reexportado).
 
 **Fuera de esta fase:** gestión de usuarios vía UI (alta/baja/cambio de rol desde la propia app — v1 se resuelve con el script de Task 8), recuperación de password (no aplica con 2-3 usuarios conocidos; si alguien la olvida, un admin la resetea corriendo el script de nuevo o una variante `reset-password`), rate limiting de intentos de login.
+
+## Incidente durante la ejecución: los tests borraron el usuario admin real
+
+Al ejecutar esta fase por primera vez contra la base real, correr `npm test` truncó `malaga.usuarios` (vía el `beforeEach` de `session.test.ts`) y borró el usuario admin recién creado — porque **no existe todavía un esquema de test separado**; los tests de integración de este proyecto siempre pegaron contra el mismo esquema `malaga` que va a tener datos reales. Se restauró el usuario a mano y se agregó un seguro:
+
+- `vitest.setup.ts` ahora **bloquea** cualquier corrida a menos que se pase `RUN_DESTRUCTIVE_DB_TESTS=true`.
+- `npm test` (el comando "normal") falla rápido con un mensaje explicando por qué.
+- `npm run test:db` es el opt-in explícito para correr los tests de integración a propósito, sabiendo que van a truncar tablas reales.
+
+**Deuda técnica pendiente, antes de sumar más usuarios reales al sistema:** separar un esquema `malaga_test` real (o una base de test aparte) para que los tests de integración dejen de tocar datos productivos. Esto requiere además parametrizar el nombre del esquema en las migraciones (hoy `malaga.` está hardcodeado en cada `CREATE TABLE`/`CREATE VIEW`, así que no alcanza con correr `node-pg-migrate --schema malaga_test`: el SQL interno seguiría apuntando a `malaga`). No se resolvió en esta fase por alcance/tiempo — queda anotado para no perderlo de vista.
