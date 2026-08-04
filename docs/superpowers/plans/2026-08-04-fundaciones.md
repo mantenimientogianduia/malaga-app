@@ -39,6 +39,7 @@ Guardar el password generado en el gestor de secretos que uses (no en el repo). 
    - En `src/lib/db.ts` (usado por la app, con `ssl` como objeto en vez de connection string): agregar `checkServerIdentity: () => undefined` junto a `rejectUnauthorized: true`.
 3. **Esquema de las migraciones.** `node-pg-migrate` intenta crear su tabla de control (`pgmigrations`) en el esquema `public` por defecto — y `malaga_app` no tiene permisos ahí (correcto, es el aislamiento funcionando). Los scripts `migrate:up`/`migrate:down` deben incluir `--schema malaga`.
 4. **Tests de integración en serie.** Como pegan contra la misma base compartida real (no hay una base de test descartable), correr los archivos de test en paralelo produce deadlocks y datos pisados entre tests. `vitest.config.ts` debe tener `fileParallelism: false`.
+5. **Todo script que toque la base necesita `NODE_EXTRA_CA_CERTS`, no solo migraciones.** Se olvidó agregarlo al script `dev` en la primera pasada (`npm run dev`) — la app arrancaba bien porque Next.js no toca la base hasta el primer request que la consulta (ej. login), y ahí fallaba con `UNABLE_TO_VERIFY_LEAF_SIGNATURE`. Cualquier script nuevo que en algún momento haga una query (`dev`, `start`, scripts de mantenimiento, etc.) necesita el mismo `cross-env NODE_EXTRA_CA_CERTS=./certs/server-ca.pem` que ya tienen `test`/`migrate:*`/`create-user`.
 
 ---
 
