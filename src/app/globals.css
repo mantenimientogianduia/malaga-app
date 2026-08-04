@@ -1,0 +1,121 @@
+@import "tailwindcss";
+
+:root {
+  --ink: #3b2415;
+  --ink-soft: #8a7361;
+  --bg: #ffffff;
+  --surface: #fbf7f2;
+  --surface-raised: #ffffff;
+  --border: #e6dbcd;
+  --copper: #ad7233;
+  --copper-strong: #7c4f1f;
+  --copper-tint: #f3e6d3;
+  --cocoa: #4a2e1c;
+  --cocoa-tint: #f1e8de;
+  --ok: #6f8f5b;
+  --ok-tint: #eaf1e4;
+  --warn: #b98a24;
+  --warn-tint: #f7ecd4;
+  --bad: #a8442f;
+  --bad-tint: #f6e1db;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ink: #f1e6d8;
+    --ink-soft: #bfa88f;
+    --bg: #241609;
+    --surface: #2d1c10;
+    --surface-raised: #352315;
+    --border: #4a3421;
+    --copper: #dd9c53;
+    --copper-strong: #f0b877;
+    --copper-tint: #3a2a16;
+    --cocoa: #f1e6d8;
+    --cocoa-tint: #3a2a16;
+    --ok: #a3c088;
+    --ok-tint: #26301f;
+    --warn: #e3bd74;
+    --warn-tint: #3a2f18;
+    --bad: #e0917c;
+    --bad-tint: #3c241d;
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --ink: #f1e6d8;
+  --ink-soft: #bfa88f;
+  --bg: #241609;
+  --surface: #2d1c10;
+  --surface-raised: #352315;
+  --border: #4a3421;
+  --copper: #dd9c53;
+  --copper-strong: #f0b877;
+  --copper-tint: #3a2a16;
+  --cocoa: #f1e6d8;
+  --cocoa-tint: #3a2a16;
+  --ok: #a3c088;
+  --ok-tint: #26301f;
+  --warn: #e3bd74;
+  --warn-tint: #3a2f18;
+  --bad: #e0917c;
+  --bad-tint: #3c241d;
+  color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+  --ink: #3b2415;
+  --ink-soft: #8a7361;
+  --bg: #ffffff;
+  --surface: #fbf7f2;
+  --surface-raised: #ffffff;
+  --border: #e6dbcd;
+  --copper: #ad7233;
+  --copper-strong: #7c4f1f;
+  --copper-tint: #f3e6d3;
+  --cocoa: #4a2e1c;
+  --cocoa-tint: #f1e8de;
+  --ok: #6f8f5b;
+  --ok-tint: #eaf1e4;
+  --warn: #b98a24;
+  --warn-tint: #f7ecd4;
+  --bad: #a8442f;
+  --bad-tint: #f6e1db;
+  color-scheme: light;
+}
+
+@theme inline {
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-border: var(--border);
+  --color-copper: var(--copper);
+  --color-copper-strong: var(--copper-strong);
+  --color-copper-tint: var(--copper-tint);
+  --color-cocoa: var(--cocoa);
+  --color-cocoa-tint: var(--cocoa-tint);
+  --color-ok: var(--ok);
+  --color-ok-tint: var(--ok-tint);
+  --color-warn: var(--warn);
+  --color-warn-tint: var(--warn-tint);
+  --color-bad: var(--bad);
+  --color-bad-tint: var(--bad-tint);
+  --font-sans: var(--font-plex-sans);
+  --font-mono: var(--font-plex-mono);
+  --font-display: var(--font-instrument-serif);
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-plex-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+::selection {
+  background: var(--copper-tint);
+  color: var(--copper-strong);
+}
