@@ -985,7 +985,8 @@ export async function listStockPtVivo(): Promise<StockPtVivo[]> {
     lote: string;
     fecha_fab: string;
   }>(
-    `SELECT v.id_partistock, v.id_prod, p.detalle AS producto_detalle, v.cantidad, v.lote, v.fecha_fab
+    `SELECT v.id_partistock, v.id_prod, p.detalle AS producto_detalle, v.cantidad, v.lote,
+            v.fecha_fab::text AS fecha_fab
      FROM malaga.v_stock_pt_vivo v
      JOIN malaga.d_productos p ON p.id_prod = v.id_prod
      ORDER BY p.detalle`
@@ -1228,3 +1229,7 @@ git commit -m "feat: add stock page with PT/SEMI vivo lists and scrap action"
 **3. Consistencia de tipos:** `OrdenParaFinalizar`/`RecetaItemParaFinalizar` se definen una sola vez en `src/lib/ordenes/queries.ts` y se reusan en `FinalizarForm.tsx` sin redefinir. `MotivoBaja` se define en `src/lib/stock/queries.ts` y se reusa en `src/app/(app)/stock/actions.ts`.
 
 **Fuera de esta fase:** asignar una partida PT a un slot de exhibidora ("dar de baja a exhibición" — necesita la UI de cartilla, que es la Fase 5), cancelar una OP, editar una OP planificada antes de finalizarla, reportes de mermas/consumo real vs. teórico.
+
+## Bug real encontrado al ejecutar: columnas `DATE` de Postgres
+
+`pg` devuelve las columnas `DATE` (no `TIMESTAMPTZ`) como objetos `Date` de JavaScript, no como strings. `listOrdenes()` seleccionaba `fecha_plan`/`fecha_real` sin castear, y React tira `Error: Objects are not valid as a React child (found: [object Date])` al intentar renderizarlas directo en JSX (`{o.fechaPlan}`). Se corrigió casteando en la consulta: `o.fecha_plan::text AS fecha_plan`. **Cualquier columna `DATE` que se vaya a mostrar en una página necesita el mismo `::text`** — la Task 4/5 de este plan (stock) ya lo aplica sobre `fecha_fab` por esta misma razón.
