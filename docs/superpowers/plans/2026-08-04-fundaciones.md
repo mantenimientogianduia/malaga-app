@@ -332,7 +332,10 @@ exports.up = (pgm) => {
       familia TEXT,
       unid_med TEXT NOT NULL,
       tipo_producto TEXT NOT NULL CHECK (tipo_producto IN ('PT', 'SEMI')),
-      activo BOOLEAN NOT NULL DEFAULT true
+      peso_estandar NUMERIC(12,3) CHECK (peso_estandar IS NULL OR peso_estandar > 0),
+      activo BOOLEAN NOT NULL DEFAULT true,
+      CONSTRAINT peso_estandar_obligatorio_pt
+        CHECK (tipo_producto <> 'PT' OR peso_estandar IS NOT NULL)
     );
   `);
 };
@@ -505,7 +508,7 @@ exports.up = (pgm) => {
       fecha_fab DATE NOT NULL,
       lote TEXT NOT NULL,
       ts_ingreso TIMESTAMPTZ NOT NULL DEFAULT now(),
-      id_op_origen INTEGER REFERENCES malaga.f_ordenes_produccion(id_op),
+      id_op_origen INTEGER UNIQUE REFERENCES malaga.f_ordenes_produccion(id_op),
       ts_exhibicion TIMESTAMPTZ,
       id_exhibidora INTEGER REFERENCES malaga.d_exhibidora(id_exhibidora),
       user_exhibicion INTEGER REFERENCES malaga.usuarios(id_user),
@@ -631,7 +634,8 @@ describe('v_stock_pt_vivo', () => {
   it('solo muestra la partida más reciente exhibida por slot', async () => {
     await withTransaction(async (client) => {
       const prod = await client.query(
-        `INSERT INTO malaga.d_productos (detalle, unid_med, tipo_producto) VALUES ('Gianduia', 'kg', 'PT') RETURNING id_prod`
+        `INSERT INTO malaga.d_productos (detalle, unid_med, tipo_producto, peso_estandar)
+         VALUES ('Gianduia', 'kg', 'PT', 4) RETURNING id_prod`
       );
       const idProd = prod.rows[0].id_prod;
 
@@ -740,7 +744,8 @@ describe('v_stock_semi_vivo', () => {
       const idSemi = semi.rows[0].id_prod;
 
       const pt = await client.query(
-        `INSERT INTO malaga.d_productos (detalle, unid_med, tipo_producto) VALUES ('Helado gianduia', 'kg', 'PT') RETURNING id_prod`
+        `INSERT INTO malaga.d_productos (detalle, unid_med, tipo_producto, peso_estandar)
+         VALUES ('Helado gianduia', 'kg', 'PT', 4) RETURNING id_prod`
       );
       const idPt = pt.rows[0].id_prod;
 
@@ -805,8 +810,11 @@ git commit -m "feat(db): add v_stock_semi_vivo view with cumulative consumption 
 
 ### Task 14: Migración — vista `v_planificacion_diaria`
 
+Implementa la regla del spec: el faltante en kg se redondea siempre hacia arriba en unidades de `peso_estandar` del producto, para sugerir una cantidad de OP a crear (no un kilaje suelto).
+
 **Files:**
 - Create: `migrations/<timestamp>_create-view-planificacion-diaria.js`
+- Test: `src/lib/queries/planificacionDiaria.test.ts`
 
 - [ ] **Step 1: Escribir la migración**
 
@@ -815,19 +823,40 @@ exports.up = (pgm) => {
   pgm.sql(`
     CREATE VIEW malaga.v_planificacion_diaria AS
     SELECT
-      e.id_exhibidora,
-      e.nro,
-      e.sucursal,
-      e.id_prod,
-      p.detalle AS producto_detalle,
-      e.cantidad_minima,
-      COALESCE(SUM(v.cantidad), 0) AS stock_actual,
-      e.cantidad_minima - COALESCE(SUM(v.cantidad), 0) AS faltante
-    FROM malaga.d_exhibidora e
-    JOIN malaga.d_productos p ON p.id_prod = e.id_prod
-    LEFT JOIN malaga.v_stock_pt_vivo v
-      ON v.id_prod = e.id_prod AND v.id_exhibidora = e.id_exhibidora
-    GROUP BY e.id_exhibidora, e.nro, e.sucursal, e.id_prod, p.detalle, e.cantidad_minima;
+      base.id_exhibidora,
+      base.nro,
+      base.sucursal,
+      base.id_prod,
+      base.producto_detalle,
+      base.peso_estandar,
+      base.cantidad_minima,
+      base.stock_actual,
+      base.faltante,
+      CASE WHEN base.faltante > 0
+        THEN CEIL(base.faltante / base.peso_estandar)
+        ELSE 0
+      END AS bachas_sugeridas,
+      CASE WHEN base.faltante > 0
+        THEN CEIL(base.faltante / base.peso_estandar) * base.peso_estandar
+        ELSE 0
+      END AS cantidad_sugerida
+    FROM (
+      SELECT
+        e.id_exhibidora,
+        e.nro,
+        e.sucursal,
+        e.id_prod,
+        p.detalle AS producto_detalle,
+        p.peso_estandar,
+        e.cantidad_minima,
+        COALESCE(SUM(v.cantidad), 0) AS stock_actual,
+        e.cantidad_minima - COALESCE(SUM(v.cantidad), 0) AS faltante
+      FROM malaga.d_exhibidora e
+      JOIN malaga.d_productos p ON p.id_prod = e.id_prod
+      LEFT JOIN malaga.v_stock_pt_vivo v
+        ON v.id_prod = e.id_prod AND v.id_exhibidora = e.id_exhibidora
+      GROUP BY e.id_exhibidora, e.nro, e.sucursal, e.id_prod, p.detalle, p.peso_estandar, e.cantidad_minima
+    ) base;
   `);
 };
 
@@ -838,11 +867,90 @@ exports.down = (pgm) => {
 
 - [ ] **Step 2: Correr `npm run migrate:up` y verificar sin error.**
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 3: Escribir el test de integración de la vista**
+
+```typescript
+// src/lib/queries/planificacionDiaria.test.ts
+import { describe, it, expect, beforeEach } from 'vitest';
+import { query, withTransaction } from '../db';
+
+describe('v_planificacion_diaria', () => {
+  beforeEach(async () => {
+    await query('TRUNCATE malaga.f_partidas_stock, malaga.d_exhibidora, malaga.d_productos RESTART IDENTITY CASCADE');
+  });
+
+  it('redondea el faltante hacia arriba en bachas de peso_estandar (10kg faltantes, bacha de 4kg -> 3 OP, 12kg)', async () => {
+    let idExhibidora: number;
+
+    await withTransaction(async (client) => {
+      const prod = await client.query(
+        `INSERT INTO malaga.d_productos (detalle, unid_med, tipo_producto, peso_estandar)
+         VALUES ('Pistacho', 'kg', 'PT', 4) RETURNING id_prod`
+      );
+      const idProd = prod.rows[0].id_prod;
+
+      const exhib = await client.query(
+        `INSERT INTO malaga.d_exhibidora (nro, id_prod, cantidad_minima)
+         VALUES (7, $1, 10) RETURNING id_exhibidora`,
+        [idProd]
+      );
+      idExhibidora = exhib.rows[0].id_exhibidora;
+      // Sin partidas cargadas: stock_actual = 0, faltante = 10kg completos.
+    });
+
+    const result = await query<{ bachas_sugeridas: string; cantidad_sugerida: string; faltante: string }>(
+      'SELECT bachas_sugeridas, cantidad_sugerida, faltante FROM malaga.v_planificacion_diaria WHERE id_exhibidora = $1',
+      [idExhibidora!]
+    );
+    expect(result.rows).toHaveLength(1);
+    expect(Number(result.rows[0].faltante)).toBeCloseTo(10, 3);
+    expect(Number(result.rows[0].bachas_sugeridas)).toBe(3);
+    expect(Number(result.rows[0].cantidad_sugerida)).toBeCloseTo(12, 3);
+  });
+
+  it('no sugiere bachas cuando el stock ya cubre el mínimo', async () => {
+    let idExhibidora: number;
+
+    await withTransaction(async (client) => {
+      const prod = await client.query(
+        `INSERT INTO malaga.d_productos (detalle, unid_med, tipo_producto, peso_estandar)
+         VALUES ('Vainilla', 'kg', 'PT', 4) RETURNING id_prod`
+      );
+      const idProd = prod.rows[0].id_prod;
+
+      const exhib = await client.query(
+        `INSERT INTO malaga.d_exhibidora (nro, id_prod, cantidad_minima)
+         VALUES (8, $1, 3) RETURNING id_exhibidora`,
+        [idProd]
+      );
+      idExhibidora = exhib.rows[0].id_exhibidora;
+
+      await client.query(
+        `INSERT INTO malaga.f_partidas_stock (id_prod, cantidad, fecha_fab, lote, ts_exhibicion, id_exhibidora)
+         VALUES ($1, 5, '2026-08-01', 'L1', '2026-08-01 08:00:00+00', $2)`,
+        [idProd, idExhibidora]
+      );
+    });
+
+    const result = await query<{ bachas_sugeridas: string }>(
+      'SELECT bachas_sugeridas FROM malaga.v_planificacion_diaria WHERE id_exhibidora = $1',
+      [idExhibidora!]
+    );
+    expect(Number(result.rows[0].bachas_sugeridas)).toBe(0);
+  });
+});
+```
+
+- [ ] **Step 4: Correr el test**
+
+Run: `npx vitest run src/lib/queries/planificacionDiaria.test.ts`
+Expected: PASS (ambos `it`)
+
+- [ ] **Step 5: Commit**
 
 ```bash
-git add migrations/
-git commit -m "feat(db): add v_planificacion_diaria view"
+git add migrations/ src/lib/queries/planificacionDiaria.test.ts
+git commit -m "feat(db): add v_planificacion_diaria view with peso_estandar rounding"
 ```
 
 ---
@@ -916,6 +1024,9 @@ git commit -m "test: add schema smoke test covering all tables and views"
 - `v_stock_pt_vivo`, `v_stock_semi_vivo`, `v_planificacion_diaria` (sección 7) → Tasks 12-14 ✓
 - Aislamiento de esquema/rol respecto a G360 (sección 8) → Prerrequisito manual + `.env.example` ✓
 - Regla "consumo nunca bloquea por falta de stock" (sección 7) → No requiere código en esta fase: no hay ningún `CHECK` ni trigger que impida `cant_subprod` mayor al restante calculado. Se deja constancia acá para que las fases siguientes (API de carga de consumos) no agreguen esa validación por error.
+- `peso_estandar` obligatorio para PT (sección 5/7) → Task 6, `CONSTRAINT peso_estandar_obligatorio_pt` ✓
+- "Una OP = una partida" (sección 7) → Task 10, `id_op_origen UNIQUE` en `f_partidas_stock` ✓
+- Redondeo de faltante a bachas de `peso_estandar` (sección 7) → Task 14, `v_planificacion_diaria` con `bachas_sugeridas`/`cantidad_sugerida`, cubierto por test con el ejemplo exacto del spec (10kg faltantes / bacha 4kg → 3 OP, 12kg) ✓
 
 **2. Placeholders:** ninguno; todas las migraciones y tests tienen SQL/código completo y ejecutable.
 
