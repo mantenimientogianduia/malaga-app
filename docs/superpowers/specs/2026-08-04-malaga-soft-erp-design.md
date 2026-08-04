@@ -105,7 +105,7 @@ Ledger de lotes físicos de PT y SEMI. La lógica de "vigencia" difiere por tipo
 | `ts_ingreso` | alta de la partida |
 | `id_op_origen` | FK `f_ordenes_produccion`, qué OP generó esta partida |
 | `ts_exhibicion`, `id_exhibidora`, `user_exhibicion` | **solo PT**: cuándo y en qué slot se exhibió |
-| `ts_baja_manual`, `motivo_baja_manual`, `user_baja_manual` | **solo SEMI** en v1: cierre excepcional por merma/vencido/ajuste |
+| `ts_baja_manual`, `motivo_baja_manual`, `user_baja_manual` | **solo SEMI** en v1: cierre del remanente (ver sección 7). `motivo_baja_manual`: `scrap` / `vencido` / `ajuste` |
 | `sucursal` | preparado para multi-sucursal futuro |
 
 ### `f_trazabilidad_op`
@@ -135,7 +135,7 @@ Ledger de lotes físicos de PT y SEMI. La lógica de "vigencia" difiere por tipo
 
 1. **Recetas** — alta/edición versionada, multinivel (una receta puede referenciar semielaborados con receta propia).
 2. **Órdenes de producción** — creación contra una receta, registro de inicio/fin, cantidad real vs. planificada, genera partida(s) de stock al confirmarse.
-3. **Stock PT y SEMI** — vista en vivo, con lógica de vigencia distinta por tipo (ver sección 7). Es un ledger de movimientos, no un contador editable a mano.
+3. **Stock PT y SEMI** — vista en vivo, con lógica de vigencia distinta por tipo (ver sección 7). Es un ledger de movimientos, no un contador editable a mano. Incluye la acción, habitual (no excepcional), de cerrar el remanente de una partida de SEMI como scrap cuando queda un resto no aprovechable (consumo por receta rara vez agota el lote exacto a cero).
 4. **Trazabilidad** — desde cualquier partida (PT o SEMI) se puede reconstruir qué OP la generó y en qué OP se consumió, lote a lote.
 5. **Cartilla / exhibidora** — gestión de los 24 slots activos, alta/baja de sabores, cambios de carta programados, mínimo objetivo por slot.
 6. **Planificación diaria (PCP v1)** — cruza stock vivo de PT contra `d_exhibidora` (sabor activo + mínimo) y sugiere qué producir al día siguiente. Basado en reglas simples, no en pronóstico de demanda.
@@ -151,7 +151,9 @@ Ledger de lotes físicos de PT y SEMI. La lógica de "vigencia" difiere por tipo
 
 > restante(SEMI) = `cantidad` inicial − suma de `cant_subprod` consumido en `f_trazabilidad_op` para esa partida
 
-Se considera agotada cuando `restante` llega a 0, o cuando se cierra manualmente por merma/vencimiento/ajuste (`ts_baja_manual`).
+En la práctica, el consumo por receta rara vez agota una partida exactamente a cero: queda un remanente chico que no vale la pena seguir usando. Cerrar ese remanente como `scrap` es un flujo **normal y esperado** (no una excepción rara), y queda registrado el motivo y el momento — el propio `restante` calculado en ese instante es la cantidad perdida, sin necesidad de un campo aparte. También se usa `ts_baja_manual` para vencimiento o ajustes por error de carga. Una partida se considera agotada cuando `restante` llega a 0 o cuando se cierra manualmente (cualquiera de los tres motivos).
+
+**Regla clave: la carga de consumos nunca bloquea la operación por falta de stock calculado.** Como el pesaje real nunca es 100% exacto, `restante` puede dar negativo (se consumió más de lo que el sistema tenía registrado para esa partida). Eso es válido y esperado: se guarda igual en `f_trazabilidad_op`, y `restante` negativo queda visible como una señal de datos a revisar (ej. en la vista de stock o en un reporte de precisión de recetas), nunca como un bloqueo a la carga.
 
 **Vistas necesarias (lógicas, no tablas físicas):**
 - `v_stock_pt_vivo`
