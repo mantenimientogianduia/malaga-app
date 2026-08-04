@@ -40,7 +40,7 @@ function mapOrdenRow(row: OrdenRow): OrdenProduccion {
 export async function listOrdenes(): Promise<OrdenProduccion[]> {
   const result = await query<OrdenRow>(
     `SELECT o.id_op, o.id_prod, p.detalle AS producto_detalle, o.cant_plan, o.cant_real,
-            o.fecha_plan, o.fecha_real, o.estado
+            o.fecha_plan::text AS fecha_plan, o.fecha_real::text AS fecha_real, o.estado
      FROM malaga.f_ordenes_produccion o
      JOIN malaga.d_productos p ON p.id_prod = o.id_prod
      ORDER BY o.fecha_plan DESC, o.id_op DESC`
