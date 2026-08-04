@@ -569,23 +569,33 @@ npm install -D tsx
 
 - [ ] **Step 2: Implementar el script**
 
+Recibe los datos por argumentos de línea de comandos, no por `readline` interactivo: en pruebas reales, el prompt interactivo de `readline` no leía bien un stdin no-TTY/pipeado en este entorno (Windows/Git Bash) y el script quedaba colgado sin insertar nada. Argumentos explícitos son además más fáciles de scriptear/automatizar.
+
 ```typescript
 // scripts/create-user.ts
-import { createInterface } from "readline/promises";
 import { hashPassword } from "../src/lib/auth/password";
 import { query } from "../src/lib/db";
 
+function getArg(name: string): string | undefined {
+  const prefix = `--${name}=`;
+  const arg = process.argv.find((a) => a.startsWith(prefix));
+  return arg?.slice(prefix.length);
+}
+
 async function main() {
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  const email = getArg("email")?.trim().toLowerCase();
+  const rol = getArg("rol")?.trim();
+  const password = getArg("password");
 
-  const email = (await rl.question("Email: ")).trim().toLowerCase();
-  const rol = (await rl.question("Rol (produccion/gestion/admin): ")).trim();
-  const password = await rl.question("Password: ");
-
-  rl.close();
+  if (!email || !rol || !password) {
+    console.error(
+      "Uso: npm run create-user -- --email=alguien@ejemplo.com --rol=admin --password=algo-seguro"
+    );
+    process.exit(1);
+  }
 
   if (!["produccion", "gestion", "admin"].includes(rol)) {
-    console.error(`Rol inválido: ${rol}`);
+    console.error(`Rol inválido: ${rol} (debe ser produccion, gestion o admin)`);
     process.exit(1);
   }
 
@@ -609,13 +619,13 @@ main().catch((err) => {
 - [ ] **Step 3: Agregar script a `package.json`**
 
 ```json
-"create-user": "cross-env NODE_EXTRA_CA_CERTS=./certs/server-ca.pem tsx scripts/create-user.ts"
+"create-user": "cross-env NODE_EXTRA_CA_CERTS=./certs/server-ca.pem tsx --env-file=.env scripts/create-user.ts"
 ```
 
 - [ ] **Step 4: Probarlo manualmente contra la base real**
 
-Run: `npm run create-user`
-Completar email/rol/password cuando lo pida. Confirmar que el usuario aparece en `malaga.usuarios` y que el password no quedó en texto plano.
+Run: `npm run create-user -- --email=alguien@ejemplo.com --rol=admin --password=algo-seguro`
+Confirmar que el usuario aparece en `malaga.usuarios` y que el password no quedó en texto plano.
 
 - [ ] **Step 5: Commit**
 
