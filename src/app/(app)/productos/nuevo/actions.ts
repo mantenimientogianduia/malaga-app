@@ -10,6 +10,7 @@ export async function crearProducto(
 ) {
   await requireRole(["gestion", "admin"]);
 
+  const codigo = String(formData.get("codigo") ?? "").trim() || undefined;
   const detalle = String(formData.get("detalle") ?? "").trim();
   const unidMed = String(formData.get("unidMed") ?? "").trim();
   const tipoProducto = String(formData.get("tipoProducto") ?? "");
@@ -25,6 +26,7 @@ export async function crearProducto(
 
   try {
     await createProducto({
+      codigo,
       detalle,
       unidMed,
       tipoProducto: tipoProducto as "PT" | "SEMI",

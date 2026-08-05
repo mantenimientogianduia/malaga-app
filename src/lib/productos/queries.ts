@@ -4,6 +4,7 @@ export type TipoProducto = "PT" | "SEMI";
 
 export interface Producto {
   idProd: number;
+  codigo: string | null;
   detalle: string;
   sector: string | null;
   familia: string | null;
@@ -15,6 +16,7 @@ export interface Producto {
 
 interface ProductoRow {
   id_prod: number;
+  codigo: string | null;
   detalle: string;
   sector: string | null;
   familia: string | null;
@@ -27,6 +29,7 @@ interface ProductoRow {
 function mapRow(row: ProductoRow): Producto {
   return {
     idProd: row.id_prod,
+    codigo: row.codigo,
     detalle: row.detalle,
     sector: row.sector,
     familia: row.familia,
@@ -39,7 +42,7 @@ function mapRow(row: ProductoRow): Producto {
 
 export async function listProductos(): Promise<Producto[]> {
   const result = await query<ProductoRow>(
-    `SELECT id_prod, detalle, sector, familia, unid_med, tipo_producto, peso_estandar, activo
+    `SELECT id_prod, codigo, detalle, sector, familia, unid_med, tipo_producto, peso_estandar, activo
      FROM malaga.d_productos
      ORDER BY tipo_producto, detalle`
   );
@@ -47,6 +50,7 @@ export async function listProductos(): Promise<Producto[]> {
 }
 
 export interface CreateProductoInput {
+  codigo?: string;
   detalle: string;
   sector?: string;
   familia?: string;
@@ -61,10 +65,11 @@ export async function createProducto(input: CreateProductoInput): Promise<Produc
   }
 
   const result = await query<ProductoRow>(
-    `INSERT INTO malaga.d_productos (detalle, sector, familia, unid_med, tipo_producto, peso_estandar)
-     VALUES ($1, $2, $3, $4, $5, $6)
-     RETURNING id_prod, detalle, sector, familia, unid_med, tipo_producto, peso_estandar, activo`,
+    `INSERT INTO malaga.d_productos (codigo, detalle, sector, familia, unid_med, tipo_producto, peso_estandar)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
+     RETURNING id_prod, codigo, detalle, sector, familia, unid_med, tipo_producto, peso_estandar, activo`,
     [
+      input.codigo ?? null,
       input.detalle,
       input.sector ?? null,
       input.familia ?? null,

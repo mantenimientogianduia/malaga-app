@@ -20,6 +20,7 @@ export default async function ProductosPage() {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border text-left text-[10.5px] uppercase tracking-wide text-ink-soft">
+              <th className="px-4 py-3">Código</th>
               <th className="px-4 py-3">Detalle</th>
               <th className="px-4 py-3">Tipo</th>
               <th className="px-4 py-3">Unidad</th>
@@ -30,6 +31,7 @@ export default async function ProductosPage() {
           <tbody>
             {productos.map((p) => (
               <tr key={p.idProd} className="border-b border-border last:border-0">
+                <td className="px-4 py-3 font-mono text-ink-soft">{p.codigo ?? "—"}</td>
                 <td className="px-4 py-3 font-medium text-ink">{p.detalle}</td>
                 <td className="px-4 py-3 text-ink-soft">{p.tipoProducto}</td>
                 <td className="px-4 py-3 text-ink-soft">{p.unidMed}</td>
@@ -41,7 +43,7 @@ export default async function ProductosPage() {
             ))}
             {productos.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-ink-soft">
+                <td colSpan={6} className="px-4 py-8 text-center text-ink-soft">
                   Todavía no hay productos cargados.
                 </td>
               </tr>

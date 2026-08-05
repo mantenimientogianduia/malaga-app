@@ -13,6 +13,15 @@ export default function NuevoProductoPage() {
 
       <form action={formAction} className="flex max-w-md flex-col gap-4">
         <label className="flex flex-col gap-1 text-sm text-ink">
+          Código (opcional)
+          <input
+            name="codigo"
+            placeholder="PT-HEL-100"
+            className="rounded-md border border-border bg-surface-raised px-3 py-2"
+          />
+        </label>
+
+        <label className="flex flex-col gap-1 text-sm text-ink">
           Detalle
           <input
             name="detalle"
