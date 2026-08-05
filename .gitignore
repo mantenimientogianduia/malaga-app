@@ -37,6 +37,9 @@ yarn-error.log*
 # vercel
 .vercel
 
+# datos reales para importaciones puntuales (no versionar)
+/data/imports/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
