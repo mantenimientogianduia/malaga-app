@@ -1,26 +1,21 @@
-import { listPlanificacion } from "@/lib/exhibidora/queries";
+import { listCartillaActual } from "@/lib/exhibidora/queries";
 import { listProductos } from "@/lib/productos/queries";
-import { SlotCard } from "./SlotCard";
+import { CartillaGrid } from "./CartillaGrid";
 
-export default async function PlanificacionPage() {
-  const [slots, productos] = await Promise.all([listPlanificacion(), listProductos()]);
-  const productosPT = productos.filter((p) => p.tipoProducto === "PT");
-  const conFaltante = slots.filter((s) => s.bachasSugeridas > 0).length;
+export default async function CartillaActualPage() {
+  const [slots, productos] = await Promise.all([listCartillaActual(), listProductos()]);
+
+  const idsEnCartilla = new Set(slots.map((s) => s.idProd));
+  const productosDisponibles = productos.filter((p) => p.tipoProducto === "PT" && !idsEnCartilla.has(p.idProd));
 
   return (
     <div className="p-6 sm:p-8 lg:p-10">
-      <div className="mb-6 flex items-baseline justify-between">
-        <h1 className="text-xl font-semibold text-ink">Planificación diaria</h1>
-        <span className="text-sm text-ink-soft">
-          {conFaltante} de {slots.length} slots por debajo del mínimo
-        </span>
+      <div className="mb-6">
+        <p className="page-eyebrow mb-1">Exhibidora · 24 posiciones</p>
+        <h1 className="text-xl font-semibold text-ink">Cartilla actual</h1>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-        {slots.map((slot) => (
-          <SlotCard key={slot.idExhibidora} slot={slot} productosPT={productosPT} />
-        ))}
-      </div>
+      <CartillaGrid slots={slots} productosDisponibles={productosDisponibles} />
     </div>
   );
 }

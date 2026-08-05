@@ -48,12 +48,86 @@ export async function listPlanificacion(): Promise<SlotPlanificacion[]> {
   }));
 }
 
-export async function cambiarSaborSlot(idExhibidora: number, idProdNuevo: number): Promise<void> {
+export interface CartillaSlot {
+  idExhibidora: number;
+  nro: number;
+  idProd: number;
+  productoDetalle: string;
+  idProdAnt: number | null;
+  productoAntDetalle: string | null;
+  tsUltimoCambio: string | null;
+  idProdFut: number | null;
+  productoFutDetalle: string | null;
+  fechaCambioProgramado: string | null;
+}
+
+// Un cambio programado se aplica solo (recorre id_prod -> id_prod_ant, id_prod_fut ->
+// id_prod) la primera vez que alguien lee la cartilla en o después de la fecha elegida.
+// No hay un cron separado: para un local con 2-3 personas que revisan la pantalla todos
+// los días esto alcanza, sin necesitar infraestructura de jobs programados.
+async function aplicarCambiosVencidos(): Promise<void> {
   await query(
     `UPDATE malaga.d_exhibidora
-     SET id_prod_ant = id_prod, id_prod = $2, ts_ulticambio = now()
-     WHERE id_exhibidora = $1`,
-    [idExhibidora, idProdNuevo]
+     SET id_prod_ant = id_prod, id_prod = id_prod_fut, id_prod_fut = NULL,
+         ts_ulticambio = ts_cambio_programado, ts_cambio_programado = NULL
+     WHERE id_prod_fut IS NOT NULL AND ts_cambio_programado::date <= CURRENT_DATE`
+  );
+}
+
+export async function listCartillaActual(): Promise<CartillaSlot[]> {
+  await aplicarCambiosVencidos();
+
+  const result = await query<{
+    id_exhibidora: number;
+    nro: number;
+    id_prod: number;
+    producto_detalle: string;
+    id_prod_ant: number | null;
+    producto_ant_detalle: string | null;
+    ts_ulticambio: string | null;
+    id_prod_fut: number | null;
+    producto_fut_detalle: string | null;
+    fecha_cambio_programado: string | null;
+  }>(
+    `SELECT e.id_exhibidora, e.nro, e.id_prod, p.detalle AS producto_detalle,
+            e.id_prod_ant, pa.detalle AS producto_ant_detalle, e.ts_ulticambio::text AS ts_ulticambio,
+            e.id_prod_fut, pf.detalle AS producto_fut_detalle,
+            e.ts_cambio_programado::date::text AS fecha_cambio_programado
+     FROM malaga.d_exhibidora e
+     JOIN malaga.d_productos p ON p.id_prod = e.id_prod
+     LEFT JOIN malaga.d_productos pa ON pa.id_prod = e.id_prod_ant
+     LEFT JOIN malaga.d_productos pf ON pf.id_prod = e.id_prod_fut
+     ORDER BY e.nro`
+  );
+  return result.rows.map((r) => ({
+    idExhibidora: r.id_exhibidora,
+    nro: r.nro,
+    idProd: r.id_prod,
+    productoDetalle: r.producto_detalle,
+    idProdAnt: r.id_prod_ant,
+    productoAntDetalle: r.producto_ant_detalle,
+    tsUltimoCambio: r.ts_ulticambio,
+    idProdFut: r.id_prod_fut,
+    productoFutDetalle: r.producto_fut_detalle,
+    fechaCambioProgramado: r.fecha_cambio_programado,
+  }));
+}
+
+export async function programarCambio(
+  idExhibidora: number,
+  idProdNuevo: number,
+  fechaProgramada: string
+): Promise<void> {
+  await query(
+    `UPDATE malaga.d_exhibidora SET id_prod_fut = $2, ts_cambio_programado = $3::date WHERE id_exhibidora = $1`,
+    [idExhibidora, idProdNuevo, fechaProgramada]
+  );
+}
+
+export async function cancelarCambioProgramado(idExhibidora: number): Promise<void> {
+  await query(
+    `UPDATE malaga.d_exhibidora SET id_prod_fut = NULL, ts_cambio_programado = NULL WHERE id_exhibidora = $1`,
+    [idExhibidora]
   );
 }
 

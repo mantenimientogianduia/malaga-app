@@ -3,9 +3,11 @@ import { query } from "../db";
 import { createProducto } from "../productos/queries";
 import {
   actualizarMinimo,
-  cambiarSaborSlot,
   exhibirPartida,
   listPartidasEnObrador,
+  listCartillaActual,
+  programarCambio,
+  cancelarCambioProgramado,
 } from "./queries";
 
 describe("exhibidora queries", () => {
@@ -22,7 +24,7 @@ describe("exhibidora queries", () => {
     return r.rows[0].id_user;
   }
 
-  it("cambiar el sabor de un slot guarda el sabor anterior", async () => {
+  it("programar un cambio para hoy o antes se aplica al leer la cartilla, guardando el sabor anterior", async () => {
     const p1 = await createProducto({ detalle: "Vainilla", unidMed: "kg", tipoProducto: "PT", pesoEstandar: 4 });
     const p2 = await createProducto({ detalle: "Chocolate", unidMed: "kg", tipoProducto: "PT", pesoEstandar: 4 });
     const exhib = await query<{ id_exhibidora: number }>(
@@ -31,14 +33,51 @@ describe("exhibidora queries", () => {
     );
     const idExhibidora = exhib.rows[0].id_exhibidora;
 
-    await cambiarSaborSlot(idExhibidora, p2.idProd);
+    await programarCambio(idExhibidora, p2.idProd, "2026-08-05");
 
-    const result = await query<{ id_prod: number; id_prod_ant: number }>(
-      `SELECT id_prod, id_prod_ant FROM malaga.d_exhibidora WHERE id_exhibidora = $1`,
-      [idExhibidora]
+    const slots = await listCartillaActual();
+    const slot = slots.find((s) => s.idExhibidora === idExhibidora)!;
+    expect(slot.idProd).toBe(p2.idProd);
+    expect(slot.idProdAnt).toBe(p1.idProd);
+    expect(slot.idProdFut).toBeNull();
+    expect(slot.fechaCambioProgramado).toBeNull();
+  });
+
+  it("un cambio programado para el futuro queda pendiente hasta esa fecha", async () => {
+    const p1 = await createProducto({ detalle: "Vainilla", unidMed: "kg", tipoProducto: "PT", pesoEstandar: 4 });
+    const p2 = await createProducto({ detalle: "Chocolate", unidMed: "kg", tipoProducto: "PT", pesoEstandar: 4 });
+    const exhib = await query<{ id_exhibidora: number }>(
+      `INSERT INTO malaga.d_exhibidora (nro, id_prod) VALUES (1, $1) RETURNING id_exhibidora`,
+      [p1.idProd]
     );
-    expect(result.rows[0].id_prod).toBe(p2.idProd);
-    expect(result.rows[0].id_prod_ant).toBe(p1.idProd);
+    const idExhibidora = exhib.rows[0].id_exhibidora;
+
+    await programarCambio(idExhibidora, p2.idProd, "2099-01-01");
+
+    const slots = await listCartillaActual();
+    const slot = slots.find((s) => s.idExhibidora === idExhibidora)!;
+    expect(slot.idProd).toBe(p1.idProd);
+    expect(slot.idProdFut).toBe(p2.idProd);
+    expect(slot.fechaCambioProgramado).toBe("2099-01-01");
+  });
+
+  it("cancelar un cambio programado lo limpia sin aplicarlo", async () => {
+    const p1 = await createProducto({ detalle: "Vainilla", unidMed: "kg", tipoProducto: "PT", pesoEstandar: 4 });
+    const p2 = await createProducto({ detalle: "Chocolate", unidMed: "kg", tipoProducto: "PT", pesoEstandar: 4 });
+    const exhib = await query<{ id_exhibidora: number }>(
+      `INSERT INTO malaga.d_exhibidora (nro, id_prod) VALUES (1, $1) RETURNING id_exhibidora`,
+      [p1.idProd]
+    );
+    const idExhibidora = exhib.rows[0].id_exhibidora;
+
+    await programarCambio(idExhibidora, p2.idProd, "2099-01-01");
+    await cancelarCambioProgramado(idExhibidora);
+
+    const slots = await listCartillaActual();
+    const slot = slots.find((s) => s.idExhibidora === idExhibidora)!;
+    expect(slot.idProd).toBe(p1.idProd);
+    expect(slot.idProdFut).toBeNull();
+    expect(slot.fechaCambioProgramado).toBeNull();
   });
 
   it("exhibir una partida la hace aparecer en stock vigente y reemplaza a la anterior del mismo slot", async () => {

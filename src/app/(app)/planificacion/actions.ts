@@ -2,22 +2,24 @@
 
 import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/auth/requireRole";
-import { actualizarMinimo, cambiarSaborSlot } from "@/lib/exhibidora/queries";
+import { programarCambio, cancelarCambioProgramado } from "@/lib/exhibidora/queries";
 
-export async function cambiarSaborAction(formData: FormData) {
+export async function programarCambioAction(formData: FormData) {
   await requireRole(["gestion", "admin"]);
   const idExhibidora = Number(formData.get("idExhibidora"));
   const idProdNuevo = Number(formData.get("idProdNuevo"));
-  if (!idExhibidora || !idProdNuevo) return;
-  await cambiarSaborSlot(idExhibidora, idProdNuevo);
+  const fechaProgramada = String(formData.get("fechaProgramada") ?? "");
+  if (!idExhibidora || !idProdNuevo || !fechaProgramada) return;
+
+  await programarCambio(idExhibidora, idProdNuevo, fechaProgramada);
   revalidatePath("/planificacion");
 }
 
-export async function actualizarMinimoAction(formData: FormData) {
+export async function cancelarCambioProgramadoAction(formData: FormData) {
   await requireRole(["gestion", "admin"]);
   const idExhibidora = Number(formData.get("idExhibidora"));
-  const cantidadMinima = Number(formData.get("cantidadMinima"));
-  if (!idExhibidora || Number.isNaN(cantidadMinima) || cantidadMinima < 0) return;
-  await actualizarMinimo(idExhibidora, cantidadMinima);
+  if (!idExhibidora) return;
+
+  await cancelarCambioProgramado(idExhibidora);
   revalidatePath("/planificacion");
 }

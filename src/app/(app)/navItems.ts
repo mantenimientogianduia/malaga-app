@@ -11,7 +11,7 @@ import {
 
 export const NAV_ITEMS = [
   { href: "/", label: "Inicio", icon: IconHome },
-  { href: "/planificacion", label: "Planificación", icon: IconTarget },
+  { href: "/planificacion", label: "Cartilla actual", icon: IconTarget },
   { href: "/exhibir", label: "Exhibir", icon: IconStorefront },
   { href: "/productos", label: "Productos", icon: IconBox },
   { href: "/recetas", label: "Recetas", icon: IconFlask },
