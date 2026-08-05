@@ -38,6 +38,19 @@ export async function listStockPtVivo(): Promise<StockPtVivo[]> {
   }));
 }
 
+export async function getVejezPromedioPtVivo(): Promise<number | null> {
+  const result = await query<{ vejez_promedio: string | null }>(
+    `SELECT
+       CASE WHEN SUM(v.cantidad) > 0
+         THEN SUM(v.cantidad * (CURRENT_DATE - v.fecha_fab)) / SUM(v.cantidad)
+         ELSE NULL
+       END AS vejez_promedio
+     FROM malaga.v_stock_pt_vivo v`
+  );
+  const val = result.rows[0]?.vejez_promedio;
+  return val === null || val === undefined ? null : Number(val);
+}
+
 export interface StockSemiVivo {
   idPartida: number;
   idProd: number;

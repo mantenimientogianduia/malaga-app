@@ -82,6 +82,17 @@ export function IconChevronLeft(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+export function IconStorefront(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...base(props)}>
+      <path d="M4 9.5 5.2 4h13.6l1.2 5.5" />
+      <path d="M4 9.5a2.3 2.3 0 0 0 4.6.4 2.3 2.3 0 0 0 4.6 0 2.3 2.3 0 0 0 4.6 0 2.3 2.3 0 0 0 4.6-.4" />
+      <path d="M5.5 10.5V20h13v-9.5" />
+      <path d="M10 20v-5.5a2 2 0 0 1 2-2v0a2 2 0 0 1 2 2V20" />
+    </svg>
+  );
+}
+
 export function IconPencil(props: SVGProps<SVGSVGElement>) {
   return (
     <svg {...base(props)} width={14} height={14}>
