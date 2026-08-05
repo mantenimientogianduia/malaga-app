@@ -5,27 +5,27 @@ export default async function RecetasPage() {
   const recetas = await listRecetasActivas();
 
   return (
-    <div className="p-10">
-      <div className="mb-8 flex items-end justify-between">
+    <div className="p-6 sm:p-8 lg:p-10">
+      <div className="mb-6 flex items-end justify-between">
         <div>
-          <p className="page-eyebrow mb-1.5">Fórmulas</p>
-          <h1 className="text-2xl font-semibold text-ink">Recetas</h1>
+          <p className="page-eyebrow mb-1">Fórmulas</p>
+          <h1 className="text-xl font-semibold text-ink">Recetas</h1>
         </div>
         <Link
           href="/recetas/nueva"
-          className="rounded-lg bg-copper px-4 py-2 text-sm font-semibold text-white shadow-card transition-colors hover:bg-copper-strong"
+          className="rounded-lg bg-copper px-3.5 py-1.5 text-xs font-semibold text-white shadow-card transition-colors hover:bg-copper-strong"
         >
           Nueva receta
         </Link>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {recetas.map((r) => (
-          <div key={r.idReceta} className="card flex flex-col gap-3 p-5">
+          <div key={r.idReceta} className="card flex flex-col gap-2.5 p-4">
             <div className="flex items-baseline justify-between">
               <Link
                 href={`/productos/${r.idProd}`}
-                className="text-base font-semibold text-ink transition-colors hover:text-copper-strong"
+                className="text-sm font-semibold text-ink transition-colors hover:text-copper-strong"
               >
                 {r.productoDetalle}
               </Link>

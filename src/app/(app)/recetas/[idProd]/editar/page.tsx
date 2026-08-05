@@ -21,10 +21,10 @@ export default async function EditarRecetaPage({
   ]);
 
   return (
-    <div className="p-10">
+    <div className="p-6 sm:p-8 lg:p-10">
       <Link
         href={`/productos/${idProdNum}`}
-        className="mb-6 inline-flex items-center gap-1 text-xs font-medium text-ink-soft transition-colors hover:text-copper"
+        className="mb-5 inline-flex items-center gap-1 text-xs font-medium text-ink-soft transition-colors hover:text-copper"
       >
         <IconChevronLeft /> {producto.detalle}
       </Link>

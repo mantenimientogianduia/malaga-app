@@ -6,8 +6,8 @@ export default async function NuevaOrdenPage() {
   const productos = await listProductosConRecetaActiva();
 
   return (
-    <div className="p-10">
-      <h1 className="mb-6 text-2xl font-semibold text-ink">Nueva orden de producción</h1>
+    <div className="p-6 sm:p-8 lg:p-10">
+      <h1 className="mb-5 text-xl font-semibold text-ink">Nueva orden de producción</h1>
       <Suspense>
         <NuevaOrdenForm productos={productos} />
       </Suspense>

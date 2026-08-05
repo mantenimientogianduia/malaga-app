@@ -6,20 +6,20 @@ function ProductoRow({ p, showSlot }: { p: Producto; showSlot: boolean }) {
   return (
     <tr className="group border-b border-border transition-colors last:border-0 hover:bg-surface-raised">
       {showSlot && (
-        <td className="w-16 px-4 py-3">
+        <td className="w-14 px-3.5 py-2.5">
           {p.posicionExhibidora ? (
-            <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-copper-tint font-mono text-[11px] font-semibold text-copper-strong">
+            <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-copper-tint font-mono text-[10px] font-semibold text-copper-strong">
               {p.posicionExhibidora}
             </span>
           ) : (
-            <span className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-dashed border-border text-[11px] text-ink-soft">
+            <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-dashed border-border text-[10px] text-ink-soft">
               —
             </span>
           )}
         </td>
       )}
-      <td className="px-4 py-3 font-mono text-ink-soft">{p.codigo ?? "—"}</td>
-      <td className="px-4 py-3">
+      <td className="px-3.5 py-2.5 font-mono text-ink-soft">{p.codigo ?? "—"}</td>
+      <td className="px-3.5 py-2.5">
         <Link
           href={`/productos/${p.idProd}`}
           className="font-medium text-ink transition-colors group-hover:text-copper-strong"
@@ -27,11 +27,11 @@ function ProductoRow({ p, showSlot }: { p: Producto; showSlot: boolean }) {
           {p.detalle}
         </Link>
       </td>
-      <td className="px-4 py-3 text-ink-soft">{p.unidMed}</td>
-      <td className="px-4 py-3 text-right font-mono text-ink-soft">
+      <td className="px-3.5 py-2.5 text-ink-soft">{p.unidMed}</td>
+      <td className="px-3.5 py-2.5 text-right font-mono text-ink-soft">
         {p.pesoEstandar ? `${p.pesoEstandar} ${p.unidMed}` : "—"}
       </td>
-      <td className="px-4 py-3">
+      <td className="px-3.5 py-2.5">
         {p.activo ? (
           <span className="text-ink-soft">Activo</span>
         ) : (
@@ -60,9 +60,9 @@ function GroupTable({
   showSlot: boolean;
 }) {
   return (
-    <section className="mb-8">
-      <div className="mb-3 flex items-center gap-2.5">
-        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-copper-tint text-copper-strong">
+    <section className="mb-6">
+      <div className="mb-2.5 flex items-center gap-2">
+        <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-copper-tint text-copper-strong">
           {icon}
         </span>
         <div>
@@ -76,13 +76,13 @@ function GroupTable({
       <div className="card overflow-hidden">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-border text-left text-[10.5px] uppercase tracking-wide text-ink-soft">
-              {showSlot && <th className="px-4 py-3">Slot</th>}
-              <th className="px-4 py-3">Código</th>
-              <th className="px-4 py-3">Detalle</th>
-              <th className="px-4 py-3">Unidad</th>
-              <th className="px-4 py-3 text-right">Peso estándar</th>
-              <th className="px-4 py-3">Estado</th>
+            <tr className="border-b border-border text-left text-[10px] uppercase tracking-wide text-ink-soft">
+              {showSlot && <th className="px-3.5 py-2.5">Slot</th>}
+              <th className="px-3.5 py-2.5">Código</th>
+              <th className="px-3.5 py-2.5">Detalle</th>
+              <th className="px-3.5 py-2.5">Unidad</th>
+              <th className="px-3.5 py-2.5 text-right">Peso estándar</th>
+              <th className="px-3.5 py-2.5">Estado</th>
             </tr>
           </thead>
           <tbody>
@@ -91,7 +91,7 @@ function GroupTable({
             ))}
             {productos.length === 0 && (
               <tr>
-                <td colSpan={showSlot ? 6 : 5} className="px-4 py-6 text-center text-ink-soft">
+                <td colSpan={showSlot ? 6 : 5} className="px-3.5 py-6 text-center text-ink-soft">
                   Nada acá todavía.
                 </td>
               </tr>
@@ -113,15 +113,15 @@ export default async function ProductosPage() {
   const bases = productos.filter((p) => p.tipoProducto === "SEMI");
 
   return (
-    <div className="p-10">
-      <div className="mb-8 flex items-end justify-between">
+    <div className="p-6 sm:p-8 lg:p-10">
+      <div className="mb-6 flex items-end justify-between">
         <div>
-          <p className="page-eyebrow mb-1.5">Catálogo</p>
-          <h1 className="text-2xl font-semibold text-ink">Productos</h1>
+          <p className="page-eyebrow mb-1">Catálogo</p>
+          <h1 className="text-xl font-semibold text-ink">Productos</h1>
         </div>
         <Link
           href="/productos/nuevo"
-          className="rounded-lg bg-copper px-4 py-2 text-sm font-semibold text-white shadow-card transition-colors hover:bg-copper-strong"
+          className="rounded-lg bg-copper px-3.5 py-1.5 text-xs font-semibold text-white shadow-card transition-colors hover:bg-copper-strong"
         >
           Nuevo producto
         </Link>

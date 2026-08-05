@@ -8,15 +8,15 @@ export default async function PlanificacionPage() {
   const conFaltante = slots.filter((s) => s.bachasSugeridas > 0).length;
 
   return (
-    <div className="p-10">
-      <div className="mb-8 flex items-baseline justify-between">
-        <h1 className="text-2xl font-semibold text-ink">Planificación diaria</h1>
+    <div className="p-6 sm:p-8 lg:p-10">
+      <div className="mb-6 flex items-baseline justify-between">
+        <h1 className="text-xl font-semibold text-ink">Planificación diaria</h1>
         <span className="text-sm text-ink-soft">
           {conFaltante} de {slots.length} slots por debajo del mínimo
         </span>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
         {slots.map((slot) => (
           <SlotCard key={slot.idExhibidora} slot={slot} productosPT={productosPT} />
         ))}

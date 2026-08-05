@@ -5,6 +5,7 @@ import { getRecetaActivaPorProducto } from "@/lib/recetas/queries";
 import { listOrdenesPorProducto } from "@/lib/ordenes/queries";
 import { listStockPtVivo, listStockSemiVivo, listConsumoDiarioPorProducto } from "@/lib/stock/queries";
 import { IconChevronLeft, IconPencil } from "@/components/icons";
+import { formatFecha } from "@/lib/formatDate";
 import { ProductoInfoForm } from "./ProductoInfoForm";
 
 const ESTADO_LABEL: Record<string, string> = {
@@ -40,17 +41,17 @@ export default async function ProductoDashboardPage({
       : stockSemiDelProducto.reduce((acc, s) => acc + Number(s.restante), 0);
 
   return (
-    <div className="p-10">
+    <div className="p-6 sm:p-8 lg:p-10">
       <Link
         href="/productos"
-        className="mb-6 inline-flex items-center gap-1 text-xs font-medium text-ink-soft transition-colors hover:text-copper"
+        className="mb-5 inline-flex items-center gap-1 text-xs font-medium text-ink-soft transition-colors hover:text-copper"
       >
         <IconChevronLeft /> Productos
       </Link>
 
-      <div className="mb-8 flex flex-wrap items-start justify-between gap-4">
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div>
-          <div className="mb-1.5 flex items-center gap-2">
+          <div className="mb-1 flex items-center gap-2">
             <span className="page-eyebrow">{producto.tipoProducto === "PT" ? "Producto terminado" : "Semielaborado"}</span>
             {producto.codigo && <span className="font-mono text-xs text-ink-soft">{producto.codigo}</span>}
             {!producto.activo && (
@@ -59,21 +60,21 @@ export default async function ProductoDashboardPage({
               </span>
             )}
           </div>
-          <h1 className="font-display text-4xl italic leading-none text-ink">{producto.detalle}</h1>
+          <h1 className="font-display text-3xl italic leading-none text-ink">{producto.detalle}</h1>
         </div>
 
-        <div className="card px-5 py-4 text-right">
-          <div className="text-[10.5px] font-semibold uppercase tracking-wide text-ink-soft">
+        <div className="card px-4 py-3 text-right">
+          <div className="text-[10px] font-semibold uppercase tracking-wide text-ink-soft">
             Stock en vivo
           </div>
-          <div className="font-mono text-2xl font-medium text-ink">
+          <div className="font-mono text-xl font-medium text-ink">
             {stockTotal.toFixed(3)} <span className="text-sm text-ink-soft">{producto.unidMed}</span>
           </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
-        <div className="flex flex-col gap-6 lg:col-span-2">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
+        <div className="flex flex-col gap-4 lg:col-span-2">
           <section>
             <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-ink">
               <IconPencil className="text-copper" /> Información
@@ -137,7 +138,7 @@ export default async function ProductoDashboardPage({
                         <tr key={s.idPartida} className="border-b border-border transition-colors last:border-0 hover:bg-surface-raised">
                           <td className="px-4 py-3 font-mono text-ink-soft">{s.lote}</td>
                           <td className="px-4 py-3 text-right font-mono text-ink">{s.cantidad}</td>
-                          <td className="px-4 py-3 text-ink-soft">{s.fechaFab}</td>
+                          <td className="px-4 py-3 text-ink-soft">{formatFecha(s.fechaFab)}</td>
                         </tr>
                       ))
                     : stockSemiDelProducto.map((s) => (
@@ -175,7 +176,7 @@ export default async function ProductoDashboardPage({
                     <tr key={o.idOp} className="border-b border-border transition-colors last:border-0 hover:bg-surface-raised">
                       <td className="px-4 py-3 font-mono text-ink-soft">OP-{o.idOp}</td>
                       <td className="px-4 py-3 text-right font-mono text-ink">{o.cantReal ?? "—"}</td>
-                      <td className="px-4 py-3 text-ink-soft">{o.fechaReal ?? o.fechaPlan}</td>
+                      <td className="px-4 py-3 text-ink-soft">{formatFecha(o.fechaReal ?? o.fechaPlan)}</td>
                       <td className="px-4 py-3 text-ink-soft">{ESTADO_LABEL[o.estado]}</td>
                     </tr>
                   ))}
@@ -205,7 +206,7 @@ export default async function ProductoDashboardPage({
                   <tbody>
                     {consumoDiario.map((c) => (
                       <tr key={c.fecha} className="border-b border-border transition-colors last:border-0 hover:bg-surface-raised">
-                        <td className="px-4 py-3 text-ink-soft">{c.fecha}</td>
+                        <td className="px-4 py-3 text-ink-soft">{formatFecha(c.fecha)}</td>
                         <td className="px-4 py-3 text-right font-mono text-ink">{c.cantidad}</td>
                       </tr>
                     ))}

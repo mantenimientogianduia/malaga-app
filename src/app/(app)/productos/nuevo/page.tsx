@@ -8,8 +8,8 @@ export default function NuevoProductoPage() {
   const [tipoProducto, setTipoProducto] = useState("PT");
 
   return (
-    <div className="p-10">
-      <h1 className="mb-6 text-2xl font-semibold text-ink">Nuevo producto</h1>
+    <div className="p-6 sm:p-8 lg:p-10">
+      <h1 className="mb-5 text-xl font-semibold text-ink">Nuevo producto</h1>
 
       <form action={formAction} className="flex max-w-md flex-col gap-4">
         <label className="flex flex-col gap-1 text-sm text-ink">

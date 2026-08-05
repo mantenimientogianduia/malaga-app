@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { exhibirPartidaAction } from "./actions";
+import { formatFecha } from "@/lib/formatDate";
 import type { PartidaEnObrador } from "@/lib/exhibidora/queries";
 
 function diasDesde(fecha: string): number {
@@ -24,10 +25,10 @@ export function ExhibirGroup({
   const incumpleFifo = sorted.length > 1 && selected.idPartida !== masVieja.idPartida;
 
   return (
-    <div className="card p-5">
-      <h3 className="mb-3 text-sm font-semibold text-ink">{productoDetalle}</h3>
+    <div className="card p-4">
+      <h3 className="mb-2.5 text-sm font-semibold text-ink">{productoDetalle}</h3>
 
-      <div className="mb-4 grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+      <div className="mb-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
         {sorted.map((p) => {
           const esRecomendada = p.idPartida === masVieja.idPartida && sorted.length > 1;
           const seleccionada = p.idPartida === selectedId;
@@ -36,33 +37,32 @@ export function ExhibirGroup({
               key={p.idPartida}
               type="button"
               onClick={() => setSelectedId(p.idPartida)}
-              className={`flex flex-col items-start gap-1 rounded-xl border p-3.5 text-left transition-colors ${
+              className={`flex flex-col items-start gap-0.5 rounded-lg border p-2.5 text-left transition-colors ${
                 seleccionada
                   ? "border-copper bg-copper-tint"
                   : "border-border bg-surface-raised hover:border-copper/50"
               }`}
             >
               {esRecomendada && (
-                <span className="mb-0.5 rounded-full bg-ok-tint px-2 py-0.5 text-[10px] font-semibold text-ok">
+                <span className="mb-0.5 rounded-full bg-ok-tint px-1.5 py-0.5 text-[9.5px] font-semibold text-ok">
                   Recomendado · FIFO
                 </span>
               )}
-              <span className="font-mono text-[26px] font-semibold leading-none text-ink">
+              <span className="font-mono text-xl font-semibold leading-none text-ink">
                 {p.cantidad}
               </span>
-              <span className="text-sm font-medium text-ink-soft">
-                {p.fechaFab} · hace {diasDesde(p.fechaFab)}d
+              <span className="text-xs font-medium text-ink-soft">
+                {formatFecha(p.fechaFab)} · hace {diasDesde(p.fechaFab)}d
               </span>
-              <span className="font-mono text-[10.5px] text-ink-soft">{p.lote}</span>
             </button>
           );
         })}
       </div>
 
       {incumpleFifo && (
-        <p className="mb-3 rounded-lg bg-warn-tint px-3 py-2 text-xs font-medium text-warn">
-          Hay una partida más vieja (del {masVieja.fechaFab}) todavía sin exhibir. Por FIFO conviene sacar esa
-          primero.
+        <p className="mb-2.5 rounded-lg bg-warn-tint px-2.5 py-1.5 text-[11px] font-medium text-warn">
+          Hay una partida más vieja (del {formatFecha(masVieja.fechaFab)}) todavía sin exhibir. Por FIFO
+          conviene sacar esa primero.
         </p>
       )}
 
@@ -72,7 +72,7 @@ export function ExhibirGroup({
           <input type="hidden" name="idExhibidora" value={selected.idExhibidoraDestino} />
           <button
             type="submit"
-            className="rounded-lg bg-copper px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-copper-strong"
+            className="rounded-lg bg-copper px-3.5 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-copper-strong"
           >
             {incumpleFifo ? "Exhibir de todos modos" : "Exhibir"}
           </button>
