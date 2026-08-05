@@ -67,6 +67,24 @@ export async function listStockSemiVivo(): Promise<StockSemiVivo[]> {
   }));
 }
 
+export interface ConsumoDiario {
+  fecha: string;
+  cantidad: string;
+}
+
+export async function listConsumoDiarioPorProducto(idProd: number, dias = 14): Promise<ConsumoDiario[]> {
+  const result = await query<{ fecha: string; cantidad: string }>(
+    `SELECT to_char(o.fecha_real, 'YYYY-MM-DD') AS fecha, SUM(t.cant_subprod) AS cantidad
+     FROM malaga.f_trazabilidad_op t
+     JOIN malaga.f_ordenes_produccion o ON o.id_op = t.id_op
+     WHERE t.id_subprod = $1 AND o.fecha_real >= (CURRENT_DATE - ($2 || ' days')::interval)
+     GROUP BY o.fecha_real
+     ORDER BY o.fecha_real DESC`,
+    [idProd, dias]
+  );
+  return result.rows;
+}
+
 export type MotivoBaja = "scrap" | "vencido" | "ajuste";
 
 export async function cerrarRemanenteSemi(

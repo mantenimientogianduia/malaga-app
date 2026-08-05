@@ -65,6 +65,26 @@ export interface RecetaConDetalle {
   items: Array<{ idSubprod: number; subprodDetalle: string; cantSubprod: string }>;
 }
 
+async function fetchItems(idReceta: number) {
+  const itemsResult = await query<{
+    id_subprod: number;
+    subprod_detalle: string;
+    cant_subprod: string;
+  }>(
+    `SELECT rd.id_subprod, sp.detalle AS subprod_detalle, rd.cant_subprod
+     FROM malaga.recetas_detalles rd
+     JOIN malaga.d_productos sp ON sp.id_prod = rd.id_subprod
+     WHERE rd.id_receta = $1
+     ORDER BY sp.detalle`,
+    [idReceta]
+  );
+  return itemsResult.rows.map((i) => ({
+    idSubprod: i.id_subprod,
+    subprodDetalle: i.subprod_detalle,
+    cantSubprod: i.cant_subprod,
+  }));
+}
+
 export async function listRecetasActivas(): Promise<RecetaConDetalle[]> {
   const recetasResult = await query<{
     id_receta: number;
@@ -82,30 +102,40 @@ export async function listRecetasActivas(): Promise<RecetaConDetalle[]> {
 
   const recetas: RecetaConDetalle[] = [];
   for (const r of recetasResult.rows) {
-    const itemsResult = await query<{
-      id_subprod: number;
-      subprod_detalle: string;
-      cant_subprod: string;
-    }>(
-      `SELECT rd.id_subprod, sp.detalle AS subprod_detalle, rd.cant_subprod
-       FROM malaga.recetas_detalles rd
-       JOIN malaga.d_productos sp ON sp.id_prod = rd.id_subprod
-       WHERE rd.id_receta = $1
-       ORDER BY sp.detalle`,
-      [r.id_receta]
-    );
     recetas.push({
       idReceta: r.id_receta,
       idProd: r.id_prod,
       productoDetalle: r.producto_detalle,
       version: r.version,
       activa: r.activa,
-      items: itemsResult.rows.map((i) => ({
-        idSubprod: i.id_subprod,
-        subprodDetalle: i.subprod_detalle,
-        cantSubprod: i.cant_subprod,
-      })),
+      items: await fetchItems(r.id_receta),
     });
   }
   return recetas;
+}
+
+export async function getRecetaActivaPorProducto(idProd: number): Promise<RecetaConDetalle | null> {
+  const result = await query<{
+    id_receta: number;
+    id_prod: number;
+    producto_detalle: string;
+    version: number;
+    activa: boolean;
+  }>(
+    `SELECT r.id_receta, r.id_prod, p.detalle AS producto_detalle, r.version, r.activa
+     FROM malaga.recetas r
+     JOIN malaga.d_productos p ON p.id_prod = r.id_prod
+     WHERE r.id_prod = $1 AND r.activa = true`,
+    [idProd]
+  );
+  if (result.rows.length === 0) return null;
+  const r = result.rows[0];
+  return {
+    idReceta: r.id_receta,
+    idProd: r.id_prod,
+    productoDetalle: r.producto_detalle,
+    version: r.version,
+    activa: r.activa,
+    items: await fetchItems(r.id_receta),
+  };
 }

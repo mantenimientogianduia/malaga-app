@@ -48,6 +48,20 @@ export async function listOrdenes(): Promise<OrdenProduccion[]> {
   return result.rows.map(mapOrdenRow);
 }
 
+export async function listOrdenesPorProducto(idProd: number, limite = 10): Promise<OrdenProduccion[]> {
+  const result = await query<OrdenRow>(
+    `SELECT o.id_op, o.id_prod, p.detalle AS producto_detalle, o.cant_plan, o.cant_real,
+            o.fecha_plan::text AS fecha_plan, o.fecha_real::text AS fecha_real, o.estado
+     FROM malaga.f_ordenes_produccion o
+     JOIN malaga.d_productos p ON p.id_prod = o.id_prod
+     WHERE o.id_prod = $1
+     ORDER BY o.fecha_plan DESC, o.id_op DESC
+     LIMIT $2`,
+    [idProd, limite]
+  );
+  return result.rows.map(mapOrdenRow);
+}
+
 export interface ProductoConReceta {
   idProd: number;
   detalle: string;

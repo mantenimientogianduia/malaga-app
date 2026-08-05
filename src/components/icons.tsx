@@ -1,0 +1,91 @@
+import type { SVGProps } from "react";
+
+function base(props: SVGProps<SVGSVGElement>) {
+  return {
+    width: 17,
+    height: 17,
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 1.75,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+    ...props,
+  };
+}
+
+export function IconHome(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...base(props)}>
+      <path d="M3 11.5 12 4l9 7.5" />
+      <path d="M5.5 10v9a1 1 0 0 0 1 1H10v-5.5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1V20h3.5a1 1 0 0 0 1-1v-9" />
+    </svg>
+  );
+}
+
+export function IconTarget(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...base(props)}>
+      <circle cx="12" cy="12" r="8" />
+      <circle cx="12" cy="12" r="4" />
+      <circle cx="12" cy="12" r="0.6" fill="currentColor" />
+    </svg>
+  );
+}
+
+export function IconBox(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...base(props)}>
+      <path d="M3.5 8 12 3.5 20.5 8 12 12.5 3.5 8Z" />
+      <path d="M3.5 8v8L12 20.5 20.5 16V8" />
+      <path d="M12 12.5V20.5" />
+    </svg>
+  );
+}
+
+export function IconFlask(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...base(props)}>
+      <path d="M9.5 3.5h5" />
+      <path d="M10.5 3.5V9L5 18a1.6 1.6 0 0 0 1.4 2.4h11.2A1.6 1.6 0 0 0 19 18l-5.5-9V3.5" />
+      <path d="M7.5 15h9" />
+    </svg>
+  );
+}
+
+export function IconClipboard(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...base(props)}>
+      <rect x="5" y="4.5" width="14" height="16" rx="1.8" />
+      <path d="M9 4.5V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v.5" />
+      <path d="M8.5 11h7" />
+      <path d="M8.5 15h7" />
+    </svg>
+  );
+}
+
+export function IconLayers(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...base(props)}>
+      <path d="M12 3 3.5 8 12 13l8.5-5L12 3Z" />
+      <path d="M3.5 12 12 17l8.5-5" />
+      <path d="M3.5 16 12 21l8.5-5" />
+    </svg>
+  );
+}
+
+export function IconChevronLeft(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...base(props)} width={15} height={15}>
+      <path d="M14.5 4.5 8 12l6.5 7.5" />
+    </svg>
+  );
+}
+
+export function IconPencil(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...base(props)} width={14} height={14}>
+      <path d="M14.5 4.5 19 9 8.5 19.5H4V15L14.5 4.5Z" />
+    </svg>
+  );
+}

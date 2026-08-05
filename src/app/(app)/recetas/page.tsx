@@ -6,30 +6,45 @@ export default async function RecetasPage() {
 
   return (
     <div className="p-10">
-      <div className="mb-8 flex items-center justify-between">
-        <h1 className="text-2xl font-semibold text-ink">Recetas</h1>
+      <div className="mb-8 flex items-end justify-between">
+        <div>
+          <p className="page-eyebrow mb-1.5">Fórmulas</p>
+          <h1 className="text-2xl font-semibold text-ink">Recetas</h1>
+        </div>
         <Link
           href="/recetas/nueva"
-          className="rounded-md bg-copper px-4 py-2 text-sm font-semibold text-white"
+          className="rounded-lg bg-copper px-4 py-2 text-sm font-semibold text-white shadow-card transition-colors hover:bg-copper-strong"
         >
           Nueva receta
         </Link>
       </div>
 
-      <div className="flex flex-col gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {recetas.map((r) => (
-          <div key={r.idReceta} className="rounded-lg border border-border bg-surface p-5">
-            <div className="mb-3 flex items-baseline justify-between">
-              <h2 className="text-base font-semibold text-ink">{r.productoDetalle}</h2>
+          <div key={r.idReceta} className="card flex flex-col gap-3 p-5">
+            <div className="flex items-baseline justify-between">
+              <Link
+                href={`/productos/${r.idProd}`}
+                className="text-base font-semibold text-ink transition-colors hover:text-copper-strong"
+              >
+                {r.productoDetalle}
+              </Link>
               <span className="font-mono text-xs text-ink-soft">v{r.version}</span>
             </div>
             <ul className="flex flex-col gap-1 text-sm text-ink-soft">
               {r.items.map((item) => (
-                <li key={item.idSubprod}>
-                  {item.cantSubprod} × {item.subprodDetalle}
+                <li key={item.idSubprod} className="flex justify-between gap-2">
+                  <span className="truncate">{item.subprodDetalle}</span>
+                  <span className="font-mono text-ink">{item.cantSubprod}</span>
                 </li>
               ))}
             </ul>
+            <Link
+              href={`/recetas/${r.idProd}/editar`}
+              className="mt-1 self-start text-xs font-medium text-copper hover:text-copper-strong"
+            >
+              Editar receta
+            </Link>
           </div>
         ))}
         {recetas.length === 0 && (

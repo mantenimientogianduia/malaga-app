@@ -6,17 +6,20 @@ export default async function ProductosPage() {
 
   return (
     <div className="p-10">
-      <div className="mb-8 flex items-center justify-between">
-        <h1 className="text-2xl font-semibold text-ink">Productos</h1>
+      <div className="mb-8 flex items-end justify-between">
+        <div>
+          <p className="page-eyebrow mb-1.5">Catálogo</p>
+          <h1 className="text-2xl font-semibold text-ink">Productos</h1>
+        </div>
         <Link
           href="/productos/nuevo"
-          className="rounded-md bg-copper px-4 py-2 text-sm font-semibold text-white"
+          className="rounded-lg bg-copper px-4 py-2 text-sm font-semibold text-white shadow-card transition-colors hover:bg-copper-strong"
         >
           Nuevo producto
         </Link>
       </div>
 
-      <div className="overflow-x-auto rounded-lg border border-border">
+      <div className="card overflow-hidden">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border text-left text-[10.5px] uppercase tracking-wide text-ink-soft">
@@ -30,9 +33,16 @@ export default async function ProductosPage() {
           </thead>
           <tbody>
             {productos.map((p) => (
-              <tr key={p.idProd} className="border-b border-border last:border-0">
+              <tr key={p.idProd} className="group border-b border-border transition-colors last:border-0 hover:bg-surface-raised">
                 <td className="px-4 py-3 font-mono text-ink-soft">{p.codigo ?? "—"}</td>
-                <td className="px-4 py-3 font-medium text-ink">{p.detalle}</td>
+                <td className="px-4 py-3">
+                  <Link
+                    href={`/productos/${p.idProd}`}
+                    className="font-medium text-ink transition-colors group-hover:text-copper-strong"
+                  >
+                    {p.detalle}
+                  </Link>
+                </td>
                 <td className="px-4 py-3 text-ink-soft">{p.tipoProducto}</td>
                 <td className="px-4 py-3 text-ink-soft">{p.unidMed}</td>
                 <td className="px-4 py-3 text-right font-mono text-ink-soft">
