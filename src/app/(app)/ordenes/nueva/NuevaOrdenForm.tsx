@@ -1,15 +1,23 @@
 "use client";
 
 import { useActionState, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { crearOrdenAction } from "./actions";
 import type { ProductoConReceta } from "@/lib/ordenes/queries";
 
 export function NuevaOrdenForm({ productos }: { productos: ProductoConReceta[] }) {
   const [state, formAction, pending] = useActionState(crearOrdenAction, undefined);
-  const [cantPlan, setCantPlan] = useState("");
+  const searchParams = useSearchParams();
   const today = new Date().toISOString().slice(0, 10);
 
+  const idProdInicial = searchParams.get("idProd") ?? "";
+  const productoInicial = productos.find((p) => String(p.idProd) === idProdInicial);
+
+  const [idProdSeleccionado, setIdProdSeleccionado] = useState(productoInicial ? idProdInicial : "");
+  const [cantPlan, setCantPlan] = useState(productoInicial?.pesoEstandar ?? "");
+
   function handleProductoChange(idProd: string) {
+    setIdProdSeleccionado(idProd);
     const producto = productos.find((p) => String(p.idProd) === idProd);
     if (producto?.pesoEstandar) {
       setCantPlan(producto.pesoEstandar);
@@ -23,6 +31,7 @@ export function NuevaOrdenForm({ productos }: { productos: ProductoConReceta[] }
         <select
           name="idProd"
           required
+          value={idProdSeleccionado}
           onChange={(e) => handleProductoChange(e.target.value)}
           className="rounded-md border border-border bg-surface-raised px-3 py-2"
         >

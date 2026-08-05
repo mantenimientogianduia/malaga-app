@@ -415,33 +415,39 @@ export default async function PlanificacionPage() {
 
 - [ ] **Step 4: Pre-completar el producto en "Nueva OP" desde el link de planificación**
 
+`useSearchParams` exige un `<Suspense>` alrededor del componente que lo usa (si no, Next.js tira warning/error). Envolver `<NuevaOrdenForm />` con `<Suspense>` en `src/app/(app)/ordenes/nueva/page.tsx`.
+
 Modificar `src/app/(app)/ordenes/nueva/NuevaOrdenForm.tsx` para leer `?idProd=` de la URL y preseleccionarlo:
+
+No usar `useEffect` para leer el query param: el linter de React (`react-hooks/set-state-in-effect`) rechaza llamar a `setState` de forma síncrona dentro de un efecto. En vez de eso, derivar el estado inicial directamente del `searchParams` en el cuerpo del componente (se lee una sola vez, al montar, que es exactamente lo que se necesita acá):
 
 ```tsx
 // src/app/(app)/ordenes/nueva/NuevaOrdenForm.tsx
 "use client";
 
-import { useActionState, useState, useEffect } from "react";
+import { useActionState, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { crearOrdenAction } from "./actions";
 import type { ProductoConReceta } from "@/lib/ordenes/queries";
 
 export function NuevaOrdenForm({ productos }: { productos: ProductoConReceta[] }) {
   const [state, formAction, pending] = useActionState(crearOrdenAction, undefined);
-  const [cantPlan, setCantPlan] = useState("");
-  const [idProdSeleccionado, setIdProdSeleccionado] = useState("");
   const searchParams = useSearchParams();
   const today = new Date().toISOString().slice(0, 10);
 
-  useEffect(() => {
-    const idProdParam = searchParams.get("idProd");
-    if (!idProdParam) return;
-    const producto = productos.find((p) => String(p.idProd) === idProdParam);
-    if (producto) {
-      setIdProdSeleccionado(idProdParam);
-      if (producto.pesoEstandar) setCantPlan(producto.pesoEstandar);
+  const idProdInicial = searchParams.get("idProd") ?? "";
+  const productoInicial = productos.find((p) => String(p.idProd) === idProdInicial);
+
+  const [idProdSeleccionado, setIdProdSeleccionado] = useState(productoInicial ? idProdInicial : "");
+  const [cantPlan, setCantPlan] = useState(productoInicial?.pesoEstandar ?? "");
+
+  function handleProductoChange(idProd: string) {
+    setIdProdSeleccionado(idProd);
+    const producto = productos.find((p) => String(p.idProd) === idProd);
+    if (producto?.pesoEstandar) {
+      setCantPlan(producto.pesoEstandar);
     }
-  }, [searchParams, productos]);
+  }
 
   return (
     <form action={formAction} className="flex max-w-sm flex-col gap-4">
@@ -451,11 +457,7 @@ export function NuevaOrdenForm({ productos }: { productos: ProductoConReceta[] }
           name="idProd"
           required
           value={idProdSeleccionado}
-          onChange={(e) => {
-            setIdProdSeleccionado(e.target.value);
-            const producto = productos.find((p) => String(p.idProd) === e.target.value);
-            if (producto?.pesoEstandar) setCantPlan(producto.pesoEstandar);
-          }}
+          onChange={(e) => handleProductoChange(e.target.value)}
           className="rounded-md border border-border bg-surface-raised px-3 py-2"
         >
           <option value="">Elegí un producto...</option>

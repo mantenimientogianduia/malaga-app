@@ -26,6 +26,12 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
             Inicio
           </Link>
           <Link
+            href="/planificacion"
+            className="rounded-md px-3 py-2 text-sm font-medium text-[#cfc3ac] hover:bg-white/5 hover:text-[#f6ecd9]"
+          >
+            Planificación
+          </Link>
+          <Link
             href="/productos"
             className="rounded-md px-3 py-2 text-sm font-medium text-[#cfc3ac] hover:bg-white/5 hover:text-[#f6ecd9]"
           >
