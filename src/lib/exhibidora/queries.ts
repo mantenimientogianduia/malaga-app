@@ -115,3 +115,50 @@ export async function exhibirPartida(
     [idPartida, idExhibidora, userExhibicion]
   );
 }
+
+export interface ExhibicionReciente {
+  idPartida: number;
+  productoDetalle: string;
+  cantidad: string;
+  lote: string;
+  tsExhibicion: string;
+  userExhibicion: string | null;
+}
+
+export async function listExhibicionesRecientes(limite = 15): Promise<ExhibicionReciente[]> {
+  const result = await query<{
+    id_partistock: number;
+    producto_detalle: string;
+    cantidad: string;
+    lote: string;
+    ts_exhibicion: string;
+    user_exhibicion: string | null;
+  }>(
+    `SELECT ps.id_partistock, p.detalle AS producto_detalle, ps.cantidad, ps.lote,
+            ps.ts_exhibicion::text AS ts_exhibicion, u.email AS user_exhibicion
+     FROM malaga.f_partidas_stock ps
+     JOIN malaga.d_productos p ON p.id_prod = ps.id_prod
+     LEFT JOIN malaga.usuarios u ON u.id_user = ps.user_exhibicion
+     WHERE ps.ts_exhibicion IS NOT NULL
+     ORDER BY ps.ts_exhibicion DESC
+     LIMIT $1`,
+    [limite]
+  );
+  return result.rows.map((r) => ({
+    idPartida: r.id_partistock,
+    productoDetalle: r.producto_detalle,
+    cantidad: r.cantidad,
+    lote: r.lote,
+    tsExhibicion: r.ts_exhibicion,
+    userExhibicion: r.user_exhibicion,
+  }));
+}
+
+export async function deshacerExhibicion(idPartida: number): Promise<void> {
+  await query(
+    `UPDATE malaga.f_partidas_stock
+     SET ts_exhibicion = NULL, id_exhibidora = NULL, user_exhibicion = NULL
+     WHERE id_partistock = $1`,
+    [idPartida]
+  );
+}

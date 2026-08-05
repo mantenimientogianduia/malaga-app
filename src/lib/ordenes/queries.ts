@@ -268,3 +268,75 @@ export async function finalizarOrden(input: FinalizarOrdenInput): Promise<{ idPa
     return { idPartida };
   });
 }
+
+export interface OrdenReciente {
+  idOp: number;
+  productoDetalle: string;
+  cantPlan: string;
+  cantReal: string | null;
+  fechaPlan: string;
+  estado: EstadoOrden;
+}
+
+export async function listOrdenesRecientes(limite = 15): Promise<OrdenReciente[]> {
+  const result = await query<{
+    id_op: number;
+    producto_detalle: string;
+    cant_plan: string;
+    cant_real: string | null;
+    fecha_plan: string;
+    estado: EstadoOrden;
+  }>(
+    `SELECT o.id_op, p.detalle AS producto_detalle, o.cant_plan, o.cant_real,
+            o.fecha_plan::text AS fecha_plan, o.estado
+     FROM malaga.f_ordenes_produccion o
+     JOIN malaga.d_productos p ON p.id_prod = o.id_prod
+     WHERE o.estado IN ('planificada', 'finalizada')
+     ORDER BY COALESCE(o.ts_fin, o.fecha_plan::timestamptz) DESC, o.id_op DESC
+     LIMIT $1`,
+    [limite]
+  );
+  return result.rows.map((r) => ({
+    idOp: r.id_op,
+    productoDetalle: r.producto_detalle,
+    cantPlan: r.cant_plan,
+    cantReal: r.cant_real,
+    fechaPlan: r.fecha_plan,
+    estado: r.estado,
+  }));
+}
+
+export async function cancelarOrdenPlanificada(idOp: number): Promise<void> {
+  const result = await query(
+    `UPDATE malaga.f_ordenes_produccion SET estado = 'cancelada' WHERE id_op = $1 AND estado = 'planificada'`,
+    [idOp]
+  );
+  if (result.rowCount === 0) {
+    throw new Error("Esta OP ya no está planificada; no se puede cancelar");
+  }
+}
+
+export async function deshacerFinalizacion(idOp: number): Promise<void> {
+  await withTransaction(async (client) => {
+    const partidaResult = await client.query<{ id_partistock: number; ts_exhibicion: string | null }>(
+      `SELECT id_partistock, ts_exhibicion FROM malaga.f_partidas_stock WHERE id_op_origen = $1 FOR UPDATE`,
+      [idOp]
+    );
+    if (partidaResult.rows.length === 0) {
+      throw new Error("Esta OP no tiene una partida generada; no hay nada que deshacer");
+    }
+    const partida = partidaResult.rows[0];
+    if (partida.ts_exhibicion !== null) {
+      throw new Error("La partida generada por esta OP ya fue exhibida; deshacé la exhibición primero");
+    }
+
+    await client.query(`DELETE FROM malaga.f_trazabilidad_op WHERE id_op = $1`, [idOp]);
+    await client.query(`DELETE FROM malaga.f_partidas_stock WHERE id_partistock = $1`, [partida.id_partistock]);
+    await client.query(
+      `UPDATE malaga.f_ordenes_produccion
+       SET estado = 'planificada', cant_real = NULL, fecha_real = NULL, ts_fin = NULL, user_fin = NULL
+       WHERE id_op = $1`,
+      [idOp]
+    );
+  });
+}

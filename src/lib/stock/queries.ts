@@ -116,3 +116,50 @@ export async function cerrarRemanenteSemi(
     [idPartida, motivo, userBaja]
   );
 }
+
+export interface CierreReciente {
+  idPartida: number;
+  productoDetalle: string;
+  lote: string;
+  motivoBaja: MotivoBaja;
+  tsBajaManual: string;
+  userBajaManual: string | null;
+}
+
+export async function listCierresRecientes(limite = 15): Promise<CierreReciente[]> {
+  const result = await query<{
+    id_partistock: number;
+    producto_detalle: string;
+    lote: string;
+    motivo_baja_manual: MotivoBaja;
+    ts_baja_manual: string;
+    user_baja_manual: string | null;
+  }>(
+    `SELECT ps.id_partistock, p.detalle AS producto_detalle, ps.lote, ps.motivo_baja_manual,
+            ps.ts_baja_manual::text AS ts_baja_manual, u.email AS user_baja_manual
+     FROM malaga.f_partidas_stock ps
+     JOIN malaga.d_productos p ON p.id_prod = ps.id_prod
+     LEFT JOIN malaga.usuarios u ON u.id_user = ps.user_baja_manual
+     WHERE ps.ts_baja_manual IS NOT NULL
+     ORDER BY ps.ts_baja_manual DESC
+     LIMIT $1`,
+    [limite]
+  );
+  return result.rows.map((r) => ({
+    idPartida: r.id_partistock,
+    productoDetalle: r.producto_detalle,
+    lote: r.lote,
+    motivoBaja: r.motivo_baja_manual,
+    tsBajaManual: r.ts_baja_manual,
+    userBajaManual: r.user_baja_manual,
+  }));
+}
+
+export async function deshacerCierreRemanente(idPartida: number): Promise<void> {
+  await query(
+    `UPDATE malaga.f_partidas_stock
+     SET ts_baja_manual = NULL, motivo_baja_manual = NULL, user_baja_manual = NULL
+     WHERE id_partistock = $1`,
+    [idPartida]
+  );
+}
