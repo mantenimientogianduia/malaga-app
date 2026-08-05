@@ -28,7 +28,7 @@ export function ExhibirGroup({
     <div className="card p-4">
       <h3 className="mb-2.5 text-sm font-semibold text-ink">{productoDetalle}</h3>
 
-      <div className="mb-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+      <div className="mb-3 flex flex-wrap gap-2">
         {sorted.map((p) => {
           const esRecomendada = p.idPartida === masVieja.idPartida && sorted.length > 1;
           const seleccionada = p.idPartida === selectedId;
@@ -37,7 +37,7 @@ export function ExhibirGroup({
               key={p.idPartida}
               type="button"
               onClick={() => setSelectedId(p.idPartida)}
-              className={`flex flex-col items-start gap-0.5 rounded-lg border p-2.5 text-left transition-colors ${
+              className={`flex min-w-[108px] flex-col items-start gap-0.5 rounded-lg border p-2.5 text-left transition-colors ${
                 seleccionada
                   ? "border-copper bg-copper-tint"
                   : "border-border bg-surface-raised hover:border-copper/50"
