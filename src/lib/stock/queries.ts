@@ -7,6 +7,7 @@ export interface StockPtVivo {
   cantidad: string;
   lote: string;
   fechaFab: string;
+  nroSlot: number | null;
 }
 
 export async function listStockPtVivo(): Promise<StockPtVivo[]> {
@@ -17,12 +18,14 @@ export async function listStockPtVivo(): Promise<StockPtVivo[]> {
     cantidad: string;
     lote: string;
     fecha_fab: string;
+    nro_slot: number | null;
   }>(
     `SELECT v.id_partistock, v.id_prod, p.detalle AS producto_detalle, v.cantidad, v.lote,
-            v.fecha_fab::text AS fecha_fab
+            v.fecha_fab::text AS fecha_fab, e.nro AS nro_slot
      FROM malaga.v_stock_pt_vivo v
      JOIN malaga.d_productos p ON p.id_prod = v.id_prod
-     ORDER BY p.detalle`
+     LEFT JOIN malaga.d_exhibidora e ON e.id_exhibidora = v.id_exhibidora
+     ORDER BY e.nro NULLS LAST, p.detalle`
   );
   return result.rows.map((r) => ({
     idPartida: r.id_partistock,
@@ -31,6 +34,7 @@ export async function listStockPtVivo(): Promise<StockPtVivo[]> {
     cantidad: r.cantidad,
     lote: r.lote,
     fechaFab: r.fecha_fab,
+    nroSlot: r.nro_slot,
   }));
 }
 

@@ -12,6 +12,7 @@ export interface Producto {
   tipoProducto: TipoProducto;
   pesoEstandar: string | null;
   activo: boolean;
+  posicionExhibidora: number | null;
 }
 
 interface ProductoRow {
@@ -24,6 +25,7 @@ interface ProductoRow {
   tipo_producto: TipoProducto;
   peso_estandar: string | null;
   activo: boolean;
+  posicion_exhibidora: number | null;
 }
 
 function mapRow(row: ProductoRow): Producto {
@@ -37,23 +39,25 @@ function mapRow(row: ProductoRow): Producto {
     tipoProducto: row.tipo_producto,
     pesoEstandar: row.peso_estandar,
     activo: row.activo,
+    posicionExhibidora: row.posicion_exhibidora,
   };
 }
 
+const SELECT_COLUMNS = `p.id_prod, p.codigo, p.detalle, p.sector, p.familia, p.unid_med, p.tipo_producto,
+       p.peso_estandar, p.activo, e.nro AS posicion_exhibidora`;
+const FROM_CLAUSE = `FROM malaga.d_productos p
+     LEFT JOIN malaga.d_exhibidora e ON e.id_prod = p.id_prod`;
+
 export async function listProductos(): Promise<Producto[]> {
   const result = await query<ProductoRow>(
-    `SELECT id_prod, codigo, detalle, sector, familia, unid_med, tipo_producto, peso_estandar, activo
-     FROM malaga.d_productos
-     ORDER BY tipo_producto, detalle`
+    `SELECT ${SELECT_COLUMNS} ${FROM_CLAUSE} ORDER BY p.tipo_producto, p.detalle`
   );
   return result.rows.map(mapRow);
 }
 
 export async function getProducto(idProd: number): Promise<Producto | null> {
   const result = await query<ProductoRow>(
-    `SELECT id_prod, codigo, detalle, sector, familia, unid_med, tipo_producto, peso_estandar, activo
-     FROM malaga.d_productos
-     WHERE id_prod = $1`,
+    `SELECT ${SELECT_COLUMNS} ${FROM_CLAUSE} WHERE p.id_prod = $1`,
     [idProd]
   );
   return result.rows[0] ? mapRow(result.rows[0]) : null;
@@ -76,11 +80,10 @@ export async function updateProducto(idProd: number, input: UpdateProductoInput)
     throw new Error("peso_estandar es obligatorio para productos PT");
   }
 
-  const result = await query<ProductoRow>(
+  await query(
     `UPDATE malaga.d_productos
      SET codigo = $2, detalle = $3, sector = $4, familia = $5, unid_med = $6, peso_estandar = $7, activo = $8
-     WHERE id_prod = $1
-     RETURNING id_prod, codigo, detalle, sector, familia, unid_med, tipo_producto, peso_estandar, activo`,
+     WHERE id_prod = $1`,
     [
       idProd,
       input.codigo ?? null,
@@ -92,7 +95,8 @@ export async function updateProducto(idProd: number, input: UpdateProductoInput)
       input.activo,
     ]
   );
-  return mapRow(result.rows[0]);
+  const updated = await getProducto(idProd);
+  return updated!;
 }
 
 export interface CreateProductoInput {
@@ -110,10 +114,10 @@ export async function createProducto(input: CreateProductoInput): Promise<Produc
     throw new Error("peso_estandar es obligatorio para productos PT");
   }
 
-  const result = await query<ProductoRow>(
+  const result = await query<{ id_prod: number }>(
     `INSERT INTO malaga.d_productos (codigo, detalle, sector, familia, unid_med, tipo_producto, peso_estandar)
      VALUES ($1, $2, $3, $4, $5, $6, $7)
-     RETURNING id_prod, codigo, detalle, sector, familia, unid_med, tipo_producto, peso_estandar, activo`,
+     RETURNING id_prod`,
     [
       input.codigo ?? null,
       input.detalle,
@@ -124,5 +128,6 @@ export async function createProducto(input: CreateProductoInput): Promise<Produc
       input.pesoEstandar ?? null,
     ]
   );
-  return mapRow(result.rows[0]);
+  const created = await getProducto(result.rows[0].id_prod);
+  return created!;
 }
