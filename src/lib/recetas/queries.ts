@@ -86,32 +86,49 @@ async function fetchItems(idReceta: number) {
 }
 
 export async function listRecetasActivas(): Promise<RecetaConDetalle[]> {
-  const recetasResult = await query<{
+  const result = await query<{
     id_receta: number;
     id_prod: number;
     producto_detalle: string;
     version: number;
     activa: boolean;
+    id_subprod: number | null;
+    subprod_detalle: string | null;
+    cant_subprod: string | null;
   }>(
-    `SELECT r.id_receta, r.id_prod, p.detalle AS producto_detalle, r.version, r.activa
+    `SELECT r.id_receta, r.id_prod, p.detalle AS producto_detalle, r.version, r.activa,
+            rd.id_subprod, sp.detalle AS subprod_detalle, rd.cant_subprod
      FROM malaga.recetas r
      JOIN malaga.d_productos p ON p.id_prod = r.id_prod
+     LEFT JOIN malaga.recetas_detalles rd ON rd.id_receta = r.id_receta
+     LEFT JOIN malaga.d_productos sp ON sp.id_prod = rd.id_subprod
      WHERE r.activa = true
-     ORDER BY p.detalle`
+     ORDER BY p.detalle, sp.detalle`
   );
 
-  const recetas: RecetaConDetalle[] = [];
-  for (const r of recetasResult.rows) {
-    recetas.push({
-      idReceta: r.id_receta,
-      idProd: r.id_prod,
-      productoDetalle: r.producto_detalle,
-      version: r.version,
-      activa: r.activa,
-      items: await fetchItems(r.id_receta),
-    });
+  const recetas = new Map<number, RecetaConDetalle>();
+  for (const r of result.rows) {
+    let receta = recetas.get(r.id_receta);
+    if (!receta) {
+      receta = {
+        idReceta: r.id_receta,
+        idProd: r.id_prod,
+        productoDetalle: r.producto_detalle,
+        version: r.version,
+        activa: r.activa,
+        items: [],
+      };
+      recetas.set(r.id_receta, receta);
+    }
+    if (r.id_subprod !== null) {
+      receta.items.push({
+        idSubprod: r.id_subprod,
+        subprodDetalle: r.subprod_detalle!,
+        cantSubprod: r.cant_subprod!,
+      });
+    }
   }
-  return recetas;
+  return Array.from(recetas.values());
 }
 
 export async function getRecetaActivaPorProducto(idProd: number): Promise<RecetaConDetalle | null> {
