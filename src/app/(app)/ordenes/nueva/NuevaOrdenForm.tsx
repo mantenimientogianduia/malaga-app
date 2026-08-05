@@ -3,9 +3,9 @@
 import { useActionState, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { crearOrdenAction } from "./actions";
-import type { ProductoConReceta } from "@/lib/ordenes/queries";
+import type { ProductoParaOrden } from "@/lib/ordenes/queries";
 
-export function NuevaOrdenForm({ productos }: { productos: ProductoConReceta[] }) {
+export function NuevaOrdenForm({ productos }: { productos: ProductoParaOrden[] }) {
   const [state, formAction, pending] = useActionState(crearOrdenAction, undefined);
   const searchParams = useSearchParams();
   const today = new Date().toISOString().slice(0, 10);
@@ -13,8 +13,19 @@ export function NuevaOrdenForm({ productos }: { productos: ProductoConReceta[] }
   const idProdInicial = searchParams.get("idProd") ?? "";
   const productoInicial = productos.find((p) => String(p.idProd) === idProdInicial);
 
+  const sectores = Array.from(new Set(productos.map((p) => p.sector).filter((s): s is string => !!s))).sort();
+
+  const [sectorSeleccionado, setSectorSeleccionado] = useState(productoInicial?.sector ?? "");
   const [idProdSeleccionado, setIdProdSeleccionado] = useState(productoInicial ? idProdInicial : "");
   const [cantPlan, setCantPlan] = useState(productoInicial?.pesoEstandar ?? "");
+
+  const productosDelSector = productos.filter((p) => p.sector === sectorSeleccionado);
+
+  function handleSectorChange(sector: string) {
+    setSectorSeleccionado(sector);
+    setIdProdSeleccionado("");
+    setCantPlan("");
+  }
 
   function handleProductoChange(idProd: string) {
     setIdProdSeleccionado(idProd);
@@ -27,16 +38,34 @@ export function NuevaOrdenForm({ productos }: { productos: ProductoConReceta[] }
   return (
     <form action={formAction} className="flex max-w-sm flex-col gap-4">
       <label className="flex flex-col gap-1 text-sm text-ink">
+        Sector
+        <select
+          required
+          value={sectorSeleccionado}
+          onChange={(e) => handleSectorChange(e.target.value)}
+          className="rounded-md border border-border bg-surface-raised px-3 py-2"
+        >
+          <option value="">Elegí un sector...</option>
+          {sectores.map((s) => (
+            <option key={s} value={s}>
+              {s}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <label className="flex flex-col gap-1 text-sm text-ink">
         Producto
         <select
           name="idProd"
           required
+          disabled={!sectorSeleccionado}
           value={idProdSeleccionado}
           onChange={(e) => handleProductoChange(e.target.value)}
-          className="rounded-md border border-border bg-surface-raised px-3 py-2"
+          className="rounded-md border border-border bg-surface-raised px-3 py-2 disabled:opacity-50"
         >
-          <option value="">Elegí un producto...</option>
-          {productos.map((p) => (
+          <option value="">{sectorSeleccionado ? "Elegí un producto..." : "Elegí un sector primero"}</option>
+          {productosDelSector.map((p) => (
             <option key={p.idProd} value={p.idProd}>
               {p.detalle} ({p.tipoProducto})
             </option>

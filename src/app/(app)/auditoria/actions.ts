@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/auth/requireRole";
 import { deshacerExhibicion } from "@/lib/exhibidora/queries";
-import { cancelarOrdenPlanificada, deshacerFinalizacion } from "@/lib/ordenes/queries";
+import { cancelarOrdenPlanificada, deshacerInicio, deshacerFinalizacion } from "@/lib/ordenes/queries";
 import { deshacerCierreRemanente } from "@/lib/stock/queries";
 
 export async function deshacerExhibicionAction(formData: FormData) {
@@ -23,6 +23,16 @@ export async function cancelarOrdenAction(formData: FormData) {
   if (!idOp) return;
 
   await cancelarOrdenPlanificada(idOp);
+  revalidatePath("/auditoria");
+  revalidatePath("/ordenes");
+}
+
+export async function deshacerInicioAction(formData: FormData) {
+  await requireRole(["gestion", "admin"]);
+  const idOp = Number(formData.get("idOp"));
+  if (!idOp) return;
+
+  await deshacerInicio(idOp);
   revalidatePath("/auditoria");
   revalidatePath("/ordenes");
 }

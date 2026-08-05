@@ -1,12 +1,21 @@
 import Link from "next/link";
 import { listOrdenes } from "@/lib/ordenes/queries";
 import { formatFecha } from "@/lib/formatDate";
+import { ElapsedClock } from "./ElapsedClock";
+import { IniciarControls } from "./IniciarControls";
 
 const ESTADO_LABEL: Record<string, string> = {
   planificada: "Planificada",
   en_proceso: "En proceso",
   finalizada: "Finalizada",
   cancelada: "Cancelada",
+};
+
+const ESTADO_CLASS: Record<string, string> = {
+  planificada: "bg-surface-raised text-ink-soft",
+  en_proceso: "bg-warn-tint text-warn",
+  finalizada: "bg-ok-tint text-ok",
+  cancelada: "bg-bad-tint text-bad",
 };
 
 export default async function OrdenesPage() {
@@ -45,16 +54,26 @@ export default async function OrdenesPage() {
                 <td className="px-3.5 py-2.5 text-right font-mono text-ink-soft">{o.cantPlan}</td>
                 <td className="px-3.5 py-2.5 text-right font-mono text-ink-soft">{o.cantReal ?? "—"}</td>
                 <td className="px-3.5 py-2.5 text-ink-soft">{formatFecha(o.fechaPlan)}</td>
-                <td className="px-3.5 py-2.5 text-ink-soft">{ESTADO_LABEL[o.estado]}</td>
                 <td className="px-3.5 py-2.5">
-                  {o.estado === "planificada" && (
-                    <Link
-                      href={`/ordenes/${o.idOp}/finalizar`}
-                      className="text-xs font-medium text-copper hover:text-copper-strong"
-                    >
-                      Finalizar
-                    </Link>
-                  )}
+                  <span
+                    className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10.5px] font-semibold ${ESTADO_CLASS[o.estado]}`}
+                  >
+                    {ESTADO_LABEL[o.estado]}
+                    {o.estado === "en_proceso" && o.tsIni && <ElapsedClock tsIni={o.tsIni} />}
+                  </span>
+                </td>
+                <td className="px-3.5 py-2.5">
+                  <div className="flex items-center gap-3">
+                    {o.estado === "planificada" && <IniciarControls idOp={o.idOp} />}
+                    {(o.estado === "planificada" || o.estado === "en_proceso") && (
+                      <Link
+                        href={`/ordenes/${o.idOp}/finalizar`}
+                        className="whitespace-nowrap text-xs font-medium text-copper hover:text-copper-strong"
+                      >
+                        Finalizar
+                      </Link>
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}

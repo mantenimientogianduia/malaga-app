@@ -12,31 +12,28 @@ export async function finalizarOrdenAction(
 
   const idOp = Number(formData.get("idOp"));
   const cantReal = Number(formData.get("cantReal"));
-  const lote = String(formData.get("lote") ?? "").trim();
-  const fechaFab = String(formData.get("fechaFab") ?? "");
+  const tsIni = String(formData.get("tsIni") ?? "");
+  const tsFin = String(formData.get("tsFin") ?? "");
+  const tsFinLocal = String(formData.get("tsFinLocal") ?? "");
 
   const idsDetalleReceta = formData.getAll("idDetalleReceta").map(Number);
   const idsSubprod = formData.getAll("idSubprod").map(Number);
-  const idsPartida = formData.getAll("idPartidaSubprod").map(Number);
+  const idsPartida = formData.getAll("idPartidaSubprod").map((v) => (v ? Number(v) : null));
   const cantidades = formData.getAll("cantConsumo").map(Number);
 
-  if (!idOp || !cantReal || cantReal <= 0 || !lote || !fechaFab) {
-    return { error: "Completá cantidad real, lote y fecha de fabricación." };
-  }
-
-  if (idsPartida.some((id) => !id)) {
-    return { error: "Todos los ingredientes necesitan una partida elegida (no hay stock cargado de alguno)." };
+  if (!idOp || !cantReal || cantReal <= 0 || !tsIni || !tsFin || !tsFinLocal) {
+    return { error: "Completá cantidad real, hora de inicio y hora de fin." };
   }
 
   const consumos = idsDetalleReceta.map((idDetalleReceta, i) => ({
     idDetalleReceta,
     idSubprod: idsSubprod[i],
-    idPartidaSubprod: idsPartida[i],
+    idPartidaSubprod: idsPartida[i] || null,
     cantSubprod: cantidades[i],
   }));
 
   try {
-    await finalizarOrden({ idOp, cantReal, lote, fechaFab, userFin: user.idUser, consumos });
+    await finalizarOrden({ idOp, cantReal, tsIni, tsFin, tsFinLocal, userFin: user.idUser, consumos });
   } catch (err) {
     return { error: err instanceof Error ? err.message : "No se pudo finalizar la OP." };
   }

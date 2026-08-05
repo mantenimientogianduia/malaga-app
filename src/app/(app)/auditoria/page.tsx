@@ -7,9 +7,16 @@ import { IconHistory, IconStorefront, IconClipboard, IconFlask } from "@/compone
 import {
   deshacerExhibicionAction,
   cancelarOrdenAction,
+  deshacerInicioAction,
   deshacerFinalizacionAction,
   deshacerCierreAction,
 } from "./actions";
+
+const ESTADO_LABEL: Record<string, string> = {
+  planificada: "Planificada",
+  en_proceso: "En proceso",
+  finalizada: "Finalizada",
+};
 
 const MOTIVO_LABEL: Record<string, string> = {
   scrap: "Scrap",
@@ -84,10 +91,11 @@ export default async function AuditoriaPage() {
                     OP-{o.idOp} · {o.productoDetalle}
                   </div>
                   <div className="font-mono text-[10.5px] text-ink-soft">
-                    {o.estado === "finalizada" ? o.cantReal : o.cantPlan} · {o.estado}
+                    {o.estado === "finalizada" ? o.cantReal : o.cantPlan} · {ESTADO_LABEL[o.estado]}
+                    {o.estado === "en_proceso" && o.tsIni ? ` desde ${formatFechaHora(o.tsIni)}` : ""}
                   </div>
                 </div>
-                {o.estado === "planificada" ? (
+                {o.estado === "planificada" && (
                   <form action={cancelarOrdenAction} className="flex-none">
                     <input type="hidden" name="idOp" value={o.idOp} />
                     <button
@@ -97,7 +105,19 @@ export default async function AuditoriaPage() {
                       Cancelar
                     </button>
                   </form>
-                ) : (
+                )}
+                {o.estado === "en_proceso" && (
+                  <form action={deshacerInicioAction} className="flex-none">
+                    <input type="hidden" name="idOp" value={o.idOp} />
+                    <button
+                      type="submit"
+                      className="whitespace-nowrap rounded-md border border-border px-2.5 py-1 text-[10.5px] font-semibold text-ink-soft transition-colors hover:border-bad hover:text-bad"
+                    >
+                      Deshacer inicio
+                    </button>
+                  </form>
+                )}
+                {o.estado === "finalizada" && (
                   <form action={deshacerFinalizacionAction} className="flex-none">
                     <input type="hidden" name="idOp" value={o.idOp} />
                     <button
