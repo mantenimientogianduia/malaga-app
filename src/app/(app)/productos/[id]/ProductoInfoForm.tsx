@@ -74,6 +74,40 @@ export function ProductoInfoForm({ producto }: { producto: Producto }) {
         </label>
       )}
 
+      <div className="grid grid-cols-3 gap-4">
+        <label className="flex flex-col gap-1 text-sm text-ink">
+          Stock mínimo de seguridad
+          <input
+            name="stockMinimo"
+            type="number"
+            step="0.001"
+            required
+            defaultValue={producto.stockMinimo}
+            className="rounded-lg border border-border bg-surface px-3 py-2 text-sm focus:border-copper focus:outline-none"
+          />
+        </label>
+        <label className="flex flex-col gap-1 text-sm text-ink">
+          Lote óptimo (vacío = libre)
+          <input
+            name="loteOptimo"
+            type="number"
+            step="0.001"
+            defaultValue={producto.loteOptimo ?? ""}
+            className="rounded-lg border border-border bg-surface px-3 py-2 text-sm focus:border-copper focus:outline-none"
+          />
+        </label>
+        <label className="flex flex-col gap-1 text-sm text-ink">
+          Lote mínimo (vacío = libre)
+          <input
+            name="loteMinimo"
+            type="number"
+            step="0.001"
+            defaultValue={producto.loteMinimo ?? ""}
+            className="rounded-lg border border-border bg-surface px-3 py-2 text-sm focus:border-copper focus:outline-none"
+          />
+        </label>
+      </div>
+
       <label className="flex items-center gap-2 text-sm text-ink">
         <input
           type="checkbox"

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { query } from "../db";
-import { createProducto, listProductos } from "./queries";
+import { createProducto, listProductos, updateProducto, getProducto } from "./queries";
 
 describe("productos queries", () => {
   beforeEach(async () => {
@@ -40,5 +40,36 @@ describe("productos queries", () => {
 
     const list = await listProductos();
     expect(list.map((p) => p.detalle)).toEqual(["Vainilla", "Pasta"]);
+  });
+
+  it("crea un producto con stock_minimo en 0 y lotes nulos por defecto", async () => {
+    const p = await createProducto({ detalle: "Base Test", unidMed: "kg", tipoProducto: "SEMI" });
+    expect(p.stockMinimo).toBe("0.000");
+    expect(p.loteOptimo).toBeNull();
+    expect(p.loteMinimo).toBeNull();
+  });
+
+  it("actualizarProducto guarda stock_minimo, lote_optimo y lote_minimo", async () => {
+    const p = await createProducto({ detalle: "Base Test", unidMed: "kg", tipoProducto: "SEMI" });
+    await updateProducto(p.idProd, {
+      detalle: "Base Test",
+      unidMed: "kg",
+      activo: true,
+      stockMinimo: 5,
+      loteOptimo: 10,
+      loteMinimo: 60,
+    });
+    const updated = await getProducto(p.idProd);
+    expect(Number(updated!.stockMinimo)).toBe(5);
+    expect(Number(updated!.loteOptimo)).toBe(10);
+    expect(Number(updated!.loteMinimo)).toBe(60);
+  });
+
+  it("lote_optimo y lote_minimo se pueden dejar en null (libre)", async () => {
+    const p = await createProducto({ detalle: "Base Libre", unidMed: "kg", tipoProducto: "SEMI" });
+    await updateProducto(p.idProd, { detalle: "Base Libre", unidMed: "kg", activo: true, stockMinimo: 0 });
+    const updated = await getProducto(p.idProd);
+    expect(updated!.loteOptimo).toBeNull();
+    expect(updated!.loteMinimo).toBeNull();
   });
 });

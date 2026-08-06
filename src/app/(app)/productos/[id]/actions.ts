@@ -17,16 +17,33 @@ export async function actualizarProductoAction(
   const sector = String(formData.get("sector") ?? "").trim() || undefined;
   const familia = String(formData.get("familia") ?? "").trim() || undefined;
   const pesoEstandarRaw = String(formData.get("pesoEstandar") ?? "").trim();
+  const stockMinimoRaw = String(formData.get("stockMinimo") ?? "").trim();
+  const loteOptimoRaw = String(formData.get("loteOptimo") ?? "").trim();
+  const loteMinimoRaw = String(formData.get("loteMinimo") ?? "").trim();
   const activo = formData.get("activo") === "on";
 
-  if (!idProd || !detalle || !unidMed) {
-    return { error: "Completá detalle y unidad de medida." };
+  if (!idProd || !detalle || !unidMed || !stockMinimoRaw) {
+    return { error: "Completá detalle, unidad de medida y stock mínimo." };
   }
 
   const pesoEstandar = pesoEstandarRaw ? Number(pesoEstandarRaw) : undefined;
+  const stockMinimo = Number(stockMinimoRaw);
+  const loteOptimo = loteOptimoRaw ? Number(loteOptimoRaw) : undefined;
+  const loteMinimo = loteMinimoRaw ? Number(loteMinimoRaw) : undefined;
 
   try {
-    await updateProducto(idProd, { codigo, detalle, unidMed, sector, familia, pesoEstandar, activo });
+    await updateProducto(idProd, {
+      codigo,
+      detalle,
+      unidMed,
+      sector,
+      familia,
+      pesoEstandar,
+      activo,
+      stockMinimo,
+      loteOptimo,
+      loteMinimo,
+    });
   } catch (err) {
     return { error: err instanceof Error ? err.message : "No se pudo guardar el producto." };
   }

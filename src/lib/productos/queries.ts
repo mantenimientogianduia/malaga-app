@@ -13,6 +13,9 @@ export interface Producto {
   pesoEstandar: string | null;
   activo: boolean;
   posicionExhibidora: number | null;
+  stockMinimo: string;
+  loteOptimo: string | null;
+  loteMinimo: string | null;
 }
 
 interface ProductoRow {
@@ -26,6 +29,9 @@ interface ProductoRow {
   peso_estandar: string | null;
   activo: boolean;
   posicion_exhibidora: number | null;
+  stock_minimo: string;
+  lote_optimo: string | null;
+  lote_minimo: string | null;
 }
 
 function mapRow(row: ProductoRow): Producto {
@@ -40,11 +46,14 @@ function mapRow(row: ProductoRow): Producto {
     pesoEstandar: row.peso_estandar,
     activo: row.activo,
     posicionExhibidora: row.posicion_exhibidora,
+    stockMinimo: row.stock_minimo,
+    loteOptimo: row.lote_optimo,
+    loteMinimo: row.lote_minimo,
   };
 }
 
 const SELECT_COLUMNS = `p.id_prod, p.codigo, p.detalle, p.sector, p.familia, p.unid_med, p.tipo_producto,
-       p.peso_estandar, p.activo, e.nro AS posicion_exhibidora`;
+       p.peso_estandar, p.activo, e.nro AS posicion_exhibidora, p.stock_minimo, p.lote_optimo, p.lote_minimo`;
 const FROM_CLAUSE = `FROM malaga.d_productos p
      LEFT JOIN malaga.d_exhibidora e ON e.id_prod = p.id_prod`;
 
@@ -71,6 +80,9 @@ export interface UpdateProductoInput {
   unidMed: string;
   pesoEstandar?: number;
   activo: boolean;
+  stockMinimo: number;
+  loteOptimo?: number;
+  loteMinimo?: number;
 }
 
 export async function updateProducto(idProd: number, input: UpdateProductoInput): Promise<Producto> {
@@ -82,7 +94,8 @@ export async function updateProducto(idProd: number, input: UpdateProductoInput)
 
   await query(
     `UPDATE malaga.d_productos
-     SET codigo = $2, detalle = $3, sector = $4, familia = $5, unid_med = $6, peso_estandar = $7, activo = $8
+     SET codigo = $2, detalle = $3, sector = $4, familia = $5, unid_med = $6, peso_estandar = $7, activo = $8,
+         stock_minimo = $9, lote_optimo = $10, lote_minimo = $11
      WHERE id_prod = $1`,
     [
       idProd,
@@ -93,6 +106,9 @@ export async function updateProducto(idProd: number, input: UpdateProductoInput)
       input.unidMed,
       input.pesoEstandar ?? null,
       input.activo,
+      input.stockMinimo,
+      input.loteOptimo ?? null,
+      input.loteMinimo ?? null,
     ]
   );
   const updated = await getProducto(idProd);
