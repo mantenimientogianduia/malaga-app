@@ -108,3 +108,105 @@ export async function setFactorProducto(idProd: number, factor: number): Promise
     [idProd, factor]
   );
 }
+
+export interface ConfigProducto {
+  idProd: number;
+  detalle: string;
+  tipoProducto: "PT" | "SEMI";
+  stockMinimo: number;
+  loteOptimo: number | null;
+  loteMinimo: number | null;
+}
+
+export async function getConfigTodosLosProductos(): Promise<Map<number, ConfigProducto>> {
+  const result = await query<{
+    id_prod: number;
+    detalle: string;
+    tipo_producto: "PT" | "SEMI";
+    stock_minimo: string;
+    lote_optimo: string | null;
+    lote_minimo: string | null;
+  }>(`SELECT id_prod, detalle, tipo_producto, stock_minimo, lote_optimo, lote_minimo FROM malaga.d_productos`);
+
+  const config = new Map<number, ConfigProducto>();
+  for (const r of result.rows) {
+    config.set(r.id_prod, {
+      idProd: r.id_prod,
+      detalle: r.detalle,
+      tipoProducto: r.tipo_producto,
+      stockMinimo: Number(r.stock_minimo),
+      loteOptimo: r.lote_optimo === null ? null : Number(r.lote_optimo),
+      loteMinimo: r.lote_minimo === null ? null : Number(r.lote_minimo),
+    });
+  }
+  return config;
+}
+
+export async function getStockActualPorProducto(): Promise<Map<number, number>> {
+  const result = await query<{ id_prod: number; total: string }>(
+    `SELECT id_prod, SUM(cantidad) AS total FROM malaga.v_stock_pt_vivo GROUP BY id_prod
+     UNION ALL
+     SELECT id_prod, SUM(restante) AS total FROM malaga.v_stock_semi_vivo GROUP BY id_prod`
+  );
+  const stock = new Map<number, number>();
+  for (const r of result.rows) {
+    stock.set(r.id_prod, Number(r.total));
+  }
+  return stock;
+}
+
+export async function getCoccionesPendientesPorProducto(): Promise<Map<number, number>> {
+  const result = await query<{ id_prod: number; total: string }>(
+    `SELECT id_prod, SUM(cant_plan) AS total
+     FROM malaga.f_ordenes_produccion
+     WHERE estado IN ('planificada', 'en_proceso')
+     GROUP BY id_prod`
+  );
+  const pendientes = new Map<number, number>();
+  for (const r of result.rows) {
+    pendientes.set(r.id_prod, Number(r.total));
+  }
+  return pendientes;
+}
+
+export interface ProductoEnCartilla {
+  idProd: number;
+  detalle: string;
+}
+
+export async function getProductosEnCartilla(): Promise<ProductoEnCartilla[]> {
+  const result = await query<{ id_prod: number; detalle: string }>(
+    `SELECT DISTINCT p.id_prod, p.detalle
+     FROM malaga.d_exhibidora e
+     JOIN malaga.d_productos p ON p.id_prod = e.id_prod
+     ORDER BY p.detalle`
+  );
+  return result.rows.map((r) => ({ idProd: r.id_prod, detalle: r.detalle }));
+}
+
+export interface ItemRecetaSemi {
+  idSubprod: number;
+  cantSubprod: string;
+}
+
+export async function getItemsRecetaSemiPorProducto(
+  idsProdPt: number[]
+): Promise<Map<number, ItemRecetaSemi[]>> {
+  const items = new Map<number, ItemRecetaSemi[]>();
+  if (idsProdPt.length === 0) return items;
+
+  const result = await query<{ id_prod_padre: number; id_subprod: number; cant_subprod: string }>(
+    `SELECT r.id_prod AS id_prod_padre, rd.id_subprod, rd.cant_subprod
+     FROM malaga.recetas r
+     JOIN malaga.recetas_detalles rd ON rd.id_receta = r.id_receta
+     JOIN malaga.d_productos sp ON sp.id_prod = rd.id_subprod
+     WHERE r.activa = true AND sp.tipo_producto = 'SEMI' AND r.id_prod = ANY($1::int[])`,
+    [idsProdPt]
+  );
+  for (const r of result.rows) {
+    const lista = items.get(r.id_prod_padre) ?? [];
+    lista.push({ idSubprod: r.id_subprod, cantSubprod: r.cant_subprod });
+    items.set(r.id_prod_padre, lista);
+  }
+  return items;
+}
