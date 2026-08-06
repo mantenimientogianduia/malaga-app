@@ -15,8 +15,10 @@ import {
   getProductosEnCartilla,
   getItemsRecetaSemiPorProducto,
   calcularPlanManana,
+  generarPlanManana,
 } from "./queries";
 import { createReceta } from "../recetas/queries";
+import { listOrdenes } from "../ordenes/queries";
 
 describe("pcp queries — históricos", () => {
   beforeEach(async () => {
@@ -293,5 +295,90 @@ describe("calcularPlanManana", () => {
 
     const filas = await calcularPlanManana();
     expect(filas.find((f) => f.idProd === semi.idProd)).toBeUndefined();
+  });
+});
+
+describe("generarPlanManana", () => {
+  beforeEach(async () => {
+    await query(
+      "TRUNCATE malaga.f_pcp_pronostico, malaga.f_trazabilidad_op, malaga.f_partidas_stock, malaga.f_ordenes_produccion, malaga.d_productos, malaga.usuarios RESTART IDENTITY CASCADE"
+    );
+  });
+
+  async function seedUser() {
+    const r = await query<{ id_user: number }>(
+      `INSERT INTO malaga.usuarios (email, password_hash, rol) VALUES ('t@t.com', 'x', 'admin') RETURNING id_user`
+    );
+    return r.rows[0].id_user;
+  }
+
+  it("crea una OP por cada fila con cantidad > 0 y ninguna para las de cantidad 0", async () => {
+    const userGenerado = await seedUser();
+    const p1 = await createProducto({ detalle: "Vainilla", unidMed: "kg", tipoProducto: "PT", pesoEstandar: 4 });
+    const p2 = await createProducto({ detalle: "Frutilla", unidMed: "kg", tipoProducto: "PT", pesoEstandar: 4 });
+
+    const { idsOp } = await generarPlanManana(
+      [
+        {
+          idProd: p1.idProd,
+          tipoProducto: "PT",
+          cantidadAPlanificar: 8,
+          demandaPronosticada: 7.5,
+          stockActual: 0,
+          stockMinimo: 4,
+          coccionesPendientes: 0,
+          necesario: 7.5,
+        },
+        {
+          idProd: p2.idProd,
+          tipoProducto: "PT",
+          cantidadAPlanificar: 0,
+          demandaPronosticada: 0,
+          stockActual: 10,
+          stockMinimo: 4,
+          coccionesPendientes: 0,
+          necesario: -6,
+        },
+      ],
+      "2026-08-06",
+      null,
+      userGenerado
+    );
+
+    expect(idsOp).toHaveLength(1);
+    const ordenes = await listOrdenes();
+    expect(ordenes.find((o) => o.idProd === p1.idProd)?.cantPlan).toBe("8.000");
+    expect(ordenes.find((o) => o.idProd === p2.idProd)).toBeUndefined();
+  });
+
+  it("guarda un snapshot en f_pcp_pronostico por cada fila, con o sin OP generada", async () => {
+    const userGenerado = await seedUser();
+    const p = await createProducto({ detalle: "Vainilla", unidMed: "kg", tipoProducto: "PT", pesoEstandar: 4 });
+
+    await generarPlanManana(
+      [
+        {
+          idProd: p.idProd,
+          tipoProducto: "PT",
+          cantidadAPlanificar: 0,
+          demandaPronosticada: 1,
+          stockActual: 10,
+          stockMinimo: 4,
+          coccionesPendientes: 0,
+          necesario: -5,
+        },
+      ],
+      "2026-08-06",
+      1.2,
+      userGenerado
+    );
+
+    const snapshot = await query<{ id_op_generada: number | null; factor_puntual_semana: string | null }>(
+      `SELECT id_op_generada, factor_puntual_semana FROM malaga.f_pcp_pronostico WHERE id_prod = $1`,
+      [p.idProd]
+    );
+    expect(snapshot.rows).toHaveLength(1);
+    expect(snapshot.rows[0].id_op_generada).toBeNull();
+    expect(Number(snapshot.rows[0].factor_puntual_semana)).toBeCloseTo(1.2, 5);
   });
 });

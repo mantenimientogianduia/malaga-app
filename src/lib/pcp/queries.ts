@@ -1,5 +1,6 @@
 import { query } from "../db";
 import { proyectarSiguiente, diaSemanaIso, calcularNecesario, calcularCantidadAPlanificar } from "./forecast";
+import { createOrdenProduccion } from "../ordenes/queries";
 
 export interface TotalSemanal {
   semana: string;
@@ -311,4 +312,60 @@ export async function calcularPlanManana(factorPuntualSemana = 1): Promise<FilaP
   });
 
   return [...filasPt, ...filasSemi];
+}
+
+export interface FilaConfirmada {
+  idProd: number;
+  tipoProducto: "PT" | "SEMI";
+  cantidadAPlanificar: number;
+  demandaPronosticada: number;
+  stockActual: number;
+  stockMinimo: number;
+  coccionesPendientes: number;
+  necesario: number;
+}
+
+export async function generarPlanManana(
+  filas: FilaConfirmada[],
+  fechaPlan: string,
+  factorPuntualSemana: number | null,
+  userGenerado: number
+): Promise<{ idsOp: number[] }> {
+  const idsOp: number[] = [];
+
+  for (const fila of filas) {
+    let idOp: number | null = null;
+    if (fila.cantidadAPlanificar > 0) {
+      const creada = await createOrdenProduccion({
+        idProd: fila.idProd,
+        cantPlan: fila.cantidadAPlanificar,
+        fechaPlan,
+      });
+      idOp = creada.idOp;
+      idsOp.push(idOp);
+    }
+
+    await query(
+      `INSERT INTO malaga.f_pcp_pronostico
+         (fecha_plan, id_prod, demanda_pronosticada, stock_actual_momento, stock_minimo_momento,
+          cocciones_pendientes_momento, necesario, cantidad_planificada, factor_puntual_semana,
+          id_op_generada, user_generado)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+      [
+        fechaPlan,
+        fila.idProd,
+        fila.demandaPronosticada,
+        fila.stockActual,
+        fila.stockMinimo,
+        fila.coccionesPendientes,
+        fila.necesario,
+        fila.cantidadAPlanificar,
+        factorPuntualSemana,
+        idOp,
+        userGenerado,
+      ]
+    );
+  }
+
+  return { idsOp };
 }
