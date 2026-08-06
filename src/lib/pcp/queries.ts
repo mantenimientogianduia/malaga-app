@@ -1,6 +1,5 @@
-import { query } from "../db";
+import { query, withTransaction } from "../db";
 import { proyectarSiguiente, diaSemanaIso, calcularNecesario, calcularCantidadAPlanificar } from "./forecast";
-import { createOrdenProduccion } from "../ordenes/queries";
 
 export interface TotalSemanal {
   semana: string;
@@ -331,41 +330,55 @@ export async function generarPlanManana(
   factorPuntualSemana: number | null,
   userGenerado: number
 ): Promise<{ idsOp: number[] }> {
-  const idsOp: number[] = [];
+  return withTransaction(async (client) => {
+    const idsOp: number[] = [];
 
-  for (const fila of filas) {
-    let idOp: number | null = null;
-    if (fila.cantidadAPlanificar > 0) {
-      const creada = await createOrdenProduccion({
-        idProd: fila.idProd,
-        cantPlan: fila.cantidadAPlanificar,
-        fechaPlan,
-      });
-      idOp = creada.idOp;
-      idsOp.push(idOp);
+    for (const fila of filas) {
+      let idOp: number | null = null;
+      if (fila.cantidadAPlanificar > 0) {
+        // Réplica en línea de createOrdenProduccion (src/lib/ordenes/queries.ts), usando
+        // el client de esta transacción en vez del pool: así la OP y el snapshot de
+        // pronóstico de cada fila viven en la misma transacción que el resto del batch.
+        // Muchos productos (sobre todo bases/SEMI) todavía no tienen una receta cargada.
+        // No bloqueamos la planificación por eso: la OP queda sin receta y al finalizar
+        // simplemente no hay ingredientes para descontar.
+        const recetaResult = await client.query<{ id_receta: number }>(
+          `SELECT id_receta FROM malaga.recetas WHERE id_prod = $1 AND activa = true`,
+          [fila.idProd]
+        );
+        const idReceta = recetaResult.rows[0]?.id_receta ?? null;
+
+        const opResult = await client.query<{ id_op: number }>(
+          `INSERT INTO malaga.f_ordenes_produccion (id_prod, id_receta, cant_plan, fecha_plan, estado)
+           VALUES ($1, $2, $3, $4, 'planificada') RETURNING id_op`,
+          [fila.idProd, idReceta, fila.cantidadAPlanificar, fechaPlan]
+        );
+        idOp = opResult.rows[0].id_op;
+        idsOp.push(idOp);
+      }
+
+      await client.query(
+        `INSERT INTO malaga.f_pcp_pronostico
+           (fecha_plan, id_prod, demanda_pronosticada, stock_actual_momento, stock_minimo_momento,
+            cocciones_pendientes_momento, necesario, cantidad_planificada, factor_puntual_semana,
+            id_op_generada, user_generado)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+        [
+          fechaPlan,
+          fila.idProd,
+          fila.demandaPronosticada,
+          fila.stockActual,
+          fila.stockMinimo,
+          fila.coccionesPendientes,
+          fila.necesario,
+          fila.cantidadAPlanificar,
+          factorPuntualSemana,
+          idOp,
+          userGenerado,
+        ]
+      );
     }
 
-    await query(
-      `INSERT INTO malaga.f_pcp_pronostico
-         (fecha_plan, id_prod, demanda_pronosticada, stock_actual_momento, stock_minimo_momento,
-          cocciones_pendientes_momento, necesario, cantidad_planificada, factor_puntual_semana,
-          id_op_generada, user_generado)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-      [
-        fechaPlan,
-        fila.idProd,
-        fila.demandaPronosticada,
-        fila.stockActual,
-        fila.stockMinimo,
-        fila.coccionesPendientes,
-        fila.necesario,
-        fila.cantidadAPlanificar,
-        factorPuntualSemana,
-        idOp,
-        userGenerado,
-      ]
-    );
-  }
-
-  return { idsOp };
+    return { idsOp };
+  });
 }
