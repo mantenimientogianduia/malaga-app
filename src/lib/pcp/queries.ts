@@ -1,4 +1,5 @@
 import { query } from "../db";
+import { proyectarSiguiente, diaSemanaIso, calcularNecesario, calcularCantidadAPlanificar } from "./forecast";
 
 export interface TotalSemanal {
   semana: string;
@@ -209,4 +210,105 @@ export async function getItemsRecetaSemiPorProducto(
     items.set(r.id_prod_padre, lista);
   }
   return items;
+}
+
+export interface FilaPlan {
+  idProd: number;
+  productoDetalle: string;
+  tipoProducto: "PT" | "SEMI";
+  demandaPronosticada: number;
+  stockActual: number;
+  stockMinimo: number;
+  coccionesPendientes: number;
+  necesario: number;
+  cantidadAPlanificar: number;
+}
+
+export async function calcularPlanManana(factorPuntualSemana = 1): Promise<FilaPlan[]> {
+  const semanas = await getExhibicionesPorSemana(8);
+  const baseline = proyectarSiguiente(semanas.map((s) => s.total));
+
+  const distribucionDia = await getDistribucionPorDia(8);
+  const distribucionProducto = await getDistribucionPorProducto(8);
+  const factoresDia = await getFactoresDia();
+  const factorPorDia = new Map(factoresDia.map((f) => [f.diaSemana, f.factor]));
+
+  const manana = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  const diaManana = diaSemanaIso(manana);
+  const pctDia = (distribucionDia[diaManana] ?? 0) * (factorPorDia.get(diaManana) ?? 1);
+
+  const productosCartilla = await getProductosEnCartilla();
+  const factoresProducto = await listFactoresProducto();
+  const factorPorProducto = new Map(factoresProducto.map((f) => [f.idProd, f.factor]));
+  const config = await getConfigTodosLosProductos();
+  const stockPorProducto = await getStockActualPorProducto();
+  const coccionesPorProducto = await getCoccionesPendientesPorProducto();
+
+  const filasPt: FilaPlan[] = productosCartilla.map((prod) => {
+    const pctProducto = (distribucionProducto[prod.idProd] ?? 0) * (factorPorProducto.get(prod.idProd) ?? 1);
+    const demandaPronosticada = baseline * pctDia * pctProducto * factorPuntualSemana;
+    const c = config.get(prod.idProd)!;
+    const stockActual = stockPorProducto.get(prod.idProd) ?? 0;
+    const coccionesPendientes = coccionesPorProducto.get(prod.idProd) ?? 0;
+    const necesario = calcularNecesario({
+      demanda: demandaPronosticada,
+      stockActual,
+      stockMinimo: c.stockMinimo,
+      coccionesPendientes,
+    });
+    const cantidadAPlanificar = calcularCantidadAPlanificar({
+      necesario,
+      loteOptimo: c.loteOptimo,
+      loteMinimo: c.loteMinimo,
+    });
+    return {
+      idProd: prod.idProd,
+      productoDetalle: prod.detalle,
+      tipoProducto: "PT",
+      demandaPronosticada,
+      stockActual,
+      stockMinimo: c.stockMinimo,
+      coccionesPendientes,
+      necesario,
+      cantidadAPlanificar,
+    };
+  });
+
+  const idsPtConProduccion = filasPt.filter((f) => f.cantidadAPlanificar > 0).map((f) => f.idProd);
+  const itemsPorPt = await getItemsRecetaSemiPorProducto(idsPtConProduccion);
+  const demandaSemi = new Map<number, number>();
+  for (const fila of filasPt) {
+    const items = itemsPorPt.get(fila.idProd);
+    if (!items) continue;
+    for (const item of items) {
+      const acumulado = demandaSemi.get(item.idSubprod) ?? 0;
+      demandaSemi.set(item.idSubprod, acumulado + Number(item.cantSubprod) * fila.cantidadAPlanificar);
+    }
+  }
+
+  const filasSemi: FilaPlan[] = Array.from(demandaSemi.entries()).map(([idProdSemi, demanda]) => {
+    const c = config.get(idProdSemi);
+    const stockActual = stockPorProducto.get(idProdSemi) ?? 0;
+    const coccionesPendientes = coccionesPorProducto.get(idProdSemi) ?? 0;
+    const stockMinimo = c?.stockMinimo ?? 0;
+    const necesario = calcularNecesario({ demanda, stockActual, stockMinimo, coccionesPendientes });
+    const cantidadAPlanificar = calcularCantidadAPlanificar({
+      necesario,
+      loteOptimo: c?.loteOptimo ?? null,
+      loteMinimo: c?.loteMinimo ?? null,
+    });
+    return {
+      idProd: idProdSemi,
+      productoDetalle: c?.detalle ?? `#${idProdSemi}`,
+      tipoProducto: "SEMI",
+      demandaPronosticada: demanda,
+      stockActual,
+      stockMinimo,
+      coccionesPendientes,
+      necesario,
+      cantidadAPlanificar,
+    };
+  });
+
+  return [...filasPt, ...filasSemi];
 }

@@ -14,6 +14,7 @@ import {
   getCoccionesPendientesPorProducto,
   getProductosEnCartilla,
   getItemsRecetaSemiPorProducto,
+  calcularPlanManana,
 } from "./queries";
 import { createReceta } from "../recetas/queries";
 
@@ -216,5 +217,81 @@ describe("pcp queries — config, stock y pendientes por lote", () => {
   it("getItemsRecetaSemiPorProducto con lista vacía no falla", async () => {
     const items = await getItemsRecetaSemiPorProducto([]);
     expect(items.size).toBe(0);
+  });
+});
+
+describe("calcularPlanManana", () => {
+  beforeEach(async () => {
+    await query(
+      "TRUNCATE malaga.f_trazabilidad_op, malaga.f_partidas_stock, malaga.f_ordenes_produccion, malaga.recetas_detalles, malaga.recetas, malaga.d_exhibidora, malaga.d_productos, malaga.pcp_factor_producto, malaga.usuarios RESTART IDENTITY CASCADE"
+    );
+    await query("UPDATE malaga.pcp_factor_dia_semana SET factor = 1.0");
+  });
+
+  it("sin historial de exhibiciones ni stock mínimo, no sugiere nada", async () => {
+    const p = await createProducto({ detalle: "Vainilla", unidMed: "kg", tipoProducto: "PT", pesoEstandar: 4 });
+    await query(`INSERT INTO malaga.d_exhibidora (nro, id_prod) VALUES (1, $1)`, [p.idProd]);
+
+    const filas = await calcularPlanManana();
+    const fila = filas.find((f) => f.idProd === p.idProd)!;
+    expect(fila.demandaPronosticada).toBe(0);
+    expect(fila.cantidadAPlanificar).toBe(0);
+  });
+
+  it("con stock mínimo pero sin stock actual, sugiere producir aunque no haya pronóstico", async () => {
+    const p = await createProducto({ detalle: "Vainilla", unidMed: "kg", tipoProducto: "PT", pesoEstandar: 4 });
+    await query(`INSERT INTO malaga.d_exhibidora (nro, id_prod) VALUES (1, $1)`, [p.idProd]);
+    await query(`UPDATE malaga.d_productos SET stock_minimo = 4, lote_optimo = 4 WHERE id_prod = $1`, [p.idProd]);
+
+    const filas = await calcularPlanManana();
+    const fila = filas.find((f) => f.idProd === p.idProd)!;
+    expect(fila.necesario).toBeCloseTo(4, 5);
+    expect(fila.cantidadAPlanificar).toBe(4);
+  });
+
+  it("explota la receta activa y suma la demanda de la base entre todos los sabores que la usan", async () => {
+    const userAlta = (
+      await query<{ id_user: number }>(
+        `INSERT INTO malaga.usuarios (email, password_hash, rol) VALUES ('t@t.com','x','admin') RETURNING id_user`
+      )
+    ).rows[0].id_user;
+
+    const semi = await createProducto({ detalle: "Base Media", unidMed: "kg", tipoProducto: "SEMI" });
+    const pt1 = await createProducto({ detalle: "Vainilla", unidMed: "kg", tipoProducto: "PT", pesoEstandar: 4 });
+    const pt2 = await createProducto({ detalle: "Gianduia", unidMed: "kg", tipoProducto: "PT", pesoEstandar: 4 });
+    await query(`INSERT INTO malaga.d_exhibidora (nro, id_prod) VALUES (1, $1), (2, $2)`, [pt1.idProd, pt2.idProd]);
+    await query(`UPDATE malaga.d_productos SET stock_minimo = 4, lote_optimo = 4 WHERE id_prod IN ($1, $2)`, [
+      pt1.idProd,
+      pt2.idProd,
+    ]);
+
+    const { createReceta } = await import("../recetas/queries");
+    await createReceta({ idProd: pt1.idProd, items: [{ idSubprod: semi.idProd, cantSubprod: 0.5 }], userAlta });
+    await createReceta({ idProd: pt2.idProd, items: [{ idSubprod: semi.idProd, cantSubprod: 0.5 }], userAlta });
+
+    const filas = await calcularPlanManana();
+    const filaSemi = filas.find((f) => f.idProd === semi.idProd)!;
+    // Cada PT necesita 4kg (su stock mínimo, sin stock actual) -> 0.5 * 4 + 0.5 * 4 = 4kg de base.
+    expect(filaSemi.demandaPronosticada).toBeCloseTo(4, 5);
+    expect(filaSemi.tipoProducto).toBe("SEMI");
+  });
+
+  it("un sabor con cantidad_a_planificar 0 no le pide nada a sus bases", async () => {
+    const userAlta = (
+      await query<{ id_user: number }>(
+        `INSERT INTO malaga.usuarios (email, password_hash, rol) VALUES ('t@t.com','x','admin') RETURNING id_user`
+      )
+    ).rows[0].id_user;
+
+    const semi = await createProducto({ detalle: "Base Media", unidMed: "kg", tipoProducto: "SEMI" });
+    const pt = await createProducto({ detalle: "Vainilla", unidMed: "kg", tipoProducto: "PT", pesoEstandar: 4 });
+    await query(`INSERT INTO malaga.d_exhibidora (nro, id_prod) VALUES (1, $1)`, [pt.idProd]);
+    // Sin stock mínimo ni historial: cantidad_a_planificar = 0.
+
+    const { createReceta } = await import("../recetas/queries");
+    await createReceta({ idProd: pt.idProd, items: [{ idSubprod: semi.idProd, cantSubprod: 0.5 }], userAlta });
+
+    const filas = await calcularPlanManana();
+    expect(filas.find((f) => f.idProd === semi.idProd)).toBeUndefined();
   });
 });
