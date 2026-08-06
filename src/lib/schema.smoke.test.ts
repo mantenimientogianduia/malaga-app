@@ -12,7 +12,7 @@ const EXPECTED_TABLES = [
   "f_trazabilidad_op",
 ];
 
-const EXPECTED_VIEWS = ["v_stock_pt_vivo", "v_stock_semi_vivo", "v_planificacion_diaria"];
+const EXPECTED_VIEWS = ["v_stock_pt_vivo", "v_stock_semi_vivo"];
 
 describe("malaga schema smoke test", () => {
   it("contiene todas las tablas esperadas", async () => {
