@@ -2,7 +2,6 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { query } from "../db";
 import { createProducto } from "../productos/queries";
 import {
-  actualizarMinimo,
   exhibirPartida,
   listPartidasEnObrador,
   listCartillaActual,
@@ -107,23 +106,6 @@ describe("exhibidora queries", () => {
     await exhibirPartida(partida2.rows[0].id_partistock, idExhibidora, userExhibicion);
     vivo = await query<{ lote: string }>("SELECT lote FROM malaga.v_stock_pt_vivo");
     expect(vivo.rows.map((r) => r.lote)).toEqual(["L2"]);
-  });
-
-  it("actualizarMinimo cambia la cantidad_minima del slot", async () => {
-    const producto = await createProducto({ detalle: "Vainilla", unidMed: "kg", tipoProducto: "PT", pesoEstandar: 4 });
-    const exhib = await query<{ id_exhibidora: number }>(
-      `INSERT INTO malaga.d_exhibidora (nro, id_prod, cantidad_minima) VALUES (1, $1, 2) RETURNING id_exhibidora`,
-      [producto.idProd]
-    );
-    const idExhibidora = exhib.rows[0].id_exhibidora;
-
-    await actualizarMinimo(idExhibidora, 5);
-
-    const result = await query<{ cantidad_minima: string }>(
-      `SELECT cantidad_minima FROM malaga.d_exhibidora WHERE id_exhibidora = $1`,
-      [idExhibidora]
-    );
-    expect(Number(result.rows[0].cantidad_minima)).toBe(5);
   });
 
   it("listPartidasEnObrador solo muestra partidas PT sin exhibir", async () => {

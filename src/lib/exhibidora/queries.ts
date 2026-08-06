@@ -1,53 +1,5 @@
 import { query } from "../db";
 
-export interface SlotPlanificacion {
-  idExhibidora: number;
-  nro: number;
-  sucursal: string;
-  idProd: number;
-  productoDetalle: string;
-  pesoEstandar: string;
-  cantidadMinima: string;
-  stockActual: string;
-  faltante: string;
-  bachasSugeridas: number;
-  cantidadSugerida: string;
-}
-
-export async function listPlanificacion(): Promise<SlotPlanificacion[]> {
-  const result = await query<{
-    id_exhibidora: number;
-    nro: number;
-    sucursal: string;
-    id_prod: number;
-    producto_detalle: string;
-    peso_estandar: string;
-    cantidad_minima: string;
-    stock_actual: string;
-    faltante: string;
-    bachas_sugeridas: string;
-    cantidad_sugerida: string;
-  }>(
-    `SELECT id_exhibidora, nro, sucursal, id_prod, producto_detalle, peso_estandar,
-            cantidad_minima, stock_actual, faltante, bachas_sugeridas, cantidad_sugerida
-     FROM malaga.v_planificacion_diaria
-     ORDER BY nro`
-  );
-  return result.rows.map((r) => ({
-    idExhibidora: r.id_exhibidora,
-    nro: r.nro,
-    sucursal: r.sucursal,
-    idProd: r.id_prod,
-    productoDetalle: r.producto_detalle,
-    pesoEstandar: r.peso_estandar,
-    cantidadMinima: r.cantidad_minima,
-    stockActual: r.stock_actual,
-    faltante: r.faltante,
-    bachasSugeridas: Number(r.bachas_sugeridas),
-    cantidadSugerida: r.cantidad_sugerida,
-  }));
-}
-
 export interface CartillaSlot {
   idExhibidora: number;
   nro: number;
@@ -129,13 +81,6 @@ export async function cancelarCambioProgramado(idExhibidora: number): Promise<vo
     `UPDATE malaga.d_exhibidora SET id_prod_fut = NULL, ts_cambio_programado = NULL WHERE id_exhibidora = $1`,
     [idExhibidora]
   );
-}
-
-export async function actualizarMinimo(idExhibidora: number, cantidadMinima: number): Promise<void> {
-  await query(`UPDATE malaga.d_exhibidora SET cantidad_minima = $2 WHERE id_exhibidora = $1`, [
-    idExhibidora,
-    cantidadMinima,
-  ]);
 }
 
 export interface PartidaEnObrador {
