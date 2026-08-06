@@ -7,11 +7,13 @@ import {
   IconLayers,
   IconStorefront,
   IconHistory,
+  IconTrendUp,
 } from "@/components/icons";
 
 export const NAV_ITEMS = [
   { href: "/", label: "Inicio", icon: IconHome },
   { href: "/planificacion", label: "Cartilla actual", icon: IconTarget },
+  { href: "/pcp", label: "PCP", icon: IconTrendUp },
   { href: "/exhibir", label: "Exhibir", icon: IconStorefront },
   { href: "/productos", label: "Productos", icon: IconBox },
   { href: "/recetas", label: "Recetas", icon: IconFlask },

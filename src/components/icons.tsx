@@ -120,3 +120,12 @@ export function IconMenu(props: SVGProps<SVGSVGElement>) {
     </svg>
   );
 }
+
+export function IconTrendUp(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...base(props)}>
+      <path d="M3.5 16.5 10 10l4 4 6.5-6.5" />
+      <path d="M15 7.5h5.5V13" />
+    </svg>
+  );
+}
