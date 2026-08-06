@@ -1,7 +1,15 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { query } from "../db";
 import { createProducto } from "../productos/queries";
-import { getExhibicionesPorSemana, getDistribucionPorDia, getDistribucionPorProducto } from "./queries";
+import {
+  getExhibicionesPorSemana,
+  getDistribucionPorDia,
+  getDistribucionPorProducto,
+  getFactoresDia,
+  setFactorDia,
+  listFactoresProducto,
+  setFactorProducto,
+} from "./queries";
 
 describe("pcp queries — históricos", () => {
   beforeEach(async () => {
@@ -60,5 +68,45 @@ describe("pcp queries — históricos", () => {
     const distribucion = await getDistribucionPorProducto(8);
     expect(distribucion[enCartilla.idProd]).toBeCloseTo(1, 5);
     expect(distribucion[fueraDeCartilla.idProd]).toBeUndefined();
+  });
+});
+
+describe("pcp queries — factores", () => {
+  beforeEach(async () => {
+    await query(
+      "TRUNCATE malaga.f_partidas_stock, malaga.d_exhibidora, malaga.d_productos, malaga.pcp_factor_producto RESTART IDENTITY CASCADE"
+    );
+    await query("UPDATE malaga.pcp_factor_dia_semana SET factor = 1.0");
+  });
+
+  it("getFactoresDia devuelve los 7 días con factor 1.0 por defecto", async () => {
+    const factores = await getFactoresDia();
+    expect(factores).toHaveLength(7);
+    expect(factores.every((f) => f.factor === 1)).toBe(true);
+  });
+
+  it("setFactorDia actualiza el factor de un día puntual", async () => {
+    await setFactorDia(6, 1.15);
+    const factores = await getFactoresDia();
+    const sabado = factores.find((f) => f.diaSemana === 6)!;
+    expect(sabado.factor).toBeCloseTo(1.15, 5);
+  });
+
+  it("listFactoresProducto devuelve factor 1.0 para productos sin fila propia", async () => {
+    const p = await createProducto({ detalle: "Vainilla", unidMed: "kg", tipoProducto: "PT", pesoEstandar: 4 });
+    const factores = await listFactoresProducto();
+    const fila = factores.find((f) => f.idProd === p.idProd)!;
+    expect(fila.factor).toBe(1);
+  });
+
+  it("setFactorProducto crea o actualiza la fila de ese producto", async () => {
+    const p = await createProducto({ detalle: "Vainilla", unidMed: "kg", tipoProducto: "PT", pesoEstandar: 4 });
+    await setFactorProducto(p.idProd, 0.85);
+    let factores = await listFactoresProducto();
+    expect(factores.find((f) => f.idProd === p.idProd)!.factor).toBeCloseTo(0.85, 5);
+
+    await setFactorProducto(p.idProd, 1.2);
+    factores = await listFactoresProducto();
+    expect(factores.find((f) => f.idProd === p.idProd)!.factor).toBeCloseTo(1.2, 5);
   });
 });

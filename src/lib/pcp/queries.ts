@@ -67,3 +67,44 @@ export async function getDistribucionPorProducto(semanas = 8): Promise<Record<nu
   }
   return distribucion;
 }
+
+export interface FactorDia {
+  diaSemana: number;
+  factor: number;
+}
+
+export async function getFactoresDia(): Promise<FactorDia[]> {
+  const result = await query<{ dia_semana: number; factor: string }>(
+    `SELECT dia_semana, factor FROM malaga.pcp_factor_dia_semana ORDER BY dia_semana`
+  );
+  return result.rows.map((r) => ({ diaSemana: r.dia_semana, factor: Number(r.factor) }));
+}
+
+export async function setFactorDia(diaSemana: number, factor: number): Promise<void> {
+  await query(`UPDATE malaga.pcp_factor_dia_semana SET factor = $2 WHERE dia_semana = $1`, [diaSemana, factor]);
+}
+
+export interface FactorProducto {
+  idProd: number;
+  productoDetalle: string;
+  factor: number;
+}
+
+export async function listFactoresProducto(): Promise<FactorProducto[]> {
+  const result = await query<{ id_prod: number; detalle: string; factor: string }>(
+    `SELECT p.id_prod, p.detalle, COALESCE(f.factor, 1.0) AS factor
+     FROM malaga.d_productos p
+     LEFT JOIN malaga.pcp_factor_producto f ON f.id_prod = p.id_prod
+     WHERE p.activo = true
+     ORDER BY p.tipo_producto, p.detalle`
+  );
+  return result.rows.map((r) => ({ idProd: r.id_prod, productoDetalle: r.detalle, factor: Number(r.factor) }));
+}
+
+export async function setFactorProducto(idProd: number, factor: number): Promise<void> {
+  await query(
+    `INSERT INTO malaga.pcp_factor_producto (id_prod, factor) VALUES ($1, $2)
+     ON CONFLICT (id_prod) DO UPDATE SET factor = EXCLUDED.factor`,
+    [idProd, factor]
+  );
+}
