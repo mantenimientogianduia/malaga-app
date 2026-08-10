@@ -63,5 +63,14 @@ export interface CantidadAPlanificarInput {
 export function calcularCantidadAPlanificar(input: CantidadAPlanificarInput): number {
   if (input.necesario <= 0) return 0;
   const redondeado = redondearArriba(input.necesario, input.loteOptimo);
-  return input.loteMinimo ? Math.max(redondeado, input.loteMinimo) : redondeado;
+  const cantidad = input.loteMinimo ? Math.max(redondeado, input.loteMinimo) : redondeado;
+  // Las columnas de destino (f_ordenes_produccion.cant_plan, f_pcp_pronostico.cantidad_planificada)
+  // son NUMERIC(12,3). Sin este redondeo, un `necesario` positivo por error de precisión de punto
+  // flotante (p. ej. al regenerar un plan cuando las cocciones pendientes ya casi cubren la demanda)
+  // puede llegar aquí como algo como 0.0000000000004 > 0, pasar de largo, y luego Postgres lo trunca
+  // a 0.000 al guardar — disparando el CHECK (cant_plan > 0) y abortando toda la transacción del
+  // batch (generarPlanManana), no solo esa fila. Redondeamos acá para que la cantidad que sale de
+  // esta función ya sea la que efectivamente se persiste, y así 0 real se trate como "no planificar".
+  const cantidadRedondeada = Math.round(cantidad * 1000) / 1000;
+  return cantidadRedondeada > 0 ? cantidadRedondeada : 0;
 }

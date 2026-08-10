@@ -109,4 +109,16 @@ describe("calcularCantidadAPlanificar", () => {
   it("todo libre (ambos null) devuelve el necesario tal cual", () => {
     expect(calcularCantidadAPlanificar({ necesario: 12.5, loteOptimo: null, loteMinimo: null })).toBe(12.5);
   });
+
+  it("redondea a 3 decimales (precisión de las columnas NUMERIC(12,3) en la base)", () => {
+    expect(calcularCantidadAPlanificar({ necesario: 12.34567, loteOptimo: null, loteMinimo: null })).toBe(12.346);
+  });
+
+  it("un necesario positivo por error de punto flotante que redondea a 0 no dispara una planificación fantasma", () => {
+    // Reproduce el bug real: al regenerar un plan cuando las cocciones pendientes ya casi cubren
+    // la demanda, el necesario puede quedar como un resto de punto flotante como 0.00000000000045
+    // en vez de 0 exacto. Sin redondear, esto pasaba `> 0` y llegaba a la base como cant_plan que
+    // Postgres truncaba a 0.000, violando el CHECK (cant_plan > 0) y abortando todo el batch.
+    expect(calcularCantidadAPlanificar({ necesario: 4.5e-13, loteOptimo: null, loteMinimo: null })).toBe(0);
+  });
 });
