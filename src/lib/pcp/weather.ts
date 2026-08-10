@@ -60,8 +60,12 @@ export async function getPronosticoClima(): Promise<DiaClima[]> {
     `&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,weather_code` +
     `&timezone=Europe%2FMadrid&forecast_days=7`;
 
-  const res = await fetch(url, { next: { revalidate: 3600 } });
-  if (!res.ok) return [];
-  const data = (await res.json()) as RespuestaOpenMeteo;
-  return parsePronosticoOpenMeteo(data);
+  try {
+    const res = await fetch(url, { next: { revalidate: 3600 } });
+    if (!res.ok) return [];
+    const data = (await res.json()) as RespuestaOpenMeteo;
+    return parsePronosticoOpenMeteo(data);
+  } catch {
+    return [];
+  }
 }
