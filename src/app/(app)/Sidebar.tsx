@@ -47,6 +47,14 @@ export function Sidebar({ user }: { user: SessionUser }) {
           <div className="truncate font-semibold text-[#e8d9c3]">{user.email}</div>
           <div className="capitalize text-[#8a7458]">{user.rol}</div>
         </div>
+        <Link
+          href="/cuenta"
+          className={`w-full rounded-lg px-2 py-1.5 text-left text-[11px] font-medium transition-colors hover:bg-white/[0.05] hover:text-copper ${
+            pathname.startsWith("/cuenta") ? "text-copper" : "text-[#8a7458]"
+          }`}
+        >
+          Mi cuenta
+        </Link>
         <form action={logout}>
           <button
             type="submit"

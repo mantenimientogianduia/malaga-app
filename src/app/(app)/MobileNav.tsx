@@ -32,14 +32,23 @@ export function MobileNav({ user }: { user: SessionUser }) {
                 <div className="truncate text-sm font-semibold text-[#e8d9c3]">{user.email}</div>
                 <div className="text-[11px] capitalize text-[#8a7458]">{user.rol}</div>
               </div>
-              <form action={logout}>
-                <button
-                  type="submit"
+              <div className="flex items-center gap-1">
+                <Link
+                  href="/cuenta"
+                  onClick={() => setOpen(false)}
                   className="rounded-lg px-2.5 py-1.5 text-[11px] font-medium text-[#8a7458] transition-colors hover:bg-white/[0.05] hover:text-copper"
                 >
-                  Cerrar sesión
-                </button>
-              </form>
+                  Mi cuenta
+                </Link>
+                <form action={logout}>
+                  <button
+                    type="submit"
+                    className="rounded-lg px-2.5 py-1.5 text-[11px] font-medium text-[#8a7458] transition-colors hover:bg-white/[0.05] hover:text-copper"
+                  >
+                    Cerrar sesión
+                  </button>
+                </form>
+              </div>
             </div>
             {overflow.map(({ href, label, icon: Icon }) => (
               <Link
