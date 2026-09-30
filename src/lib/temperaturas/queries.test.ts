@@ -1,0 +1,67 @@
+import { describe, it, expect, beforeEach } from "vitest";
+import { query } from "../db";
+import { listPuntos, getConfigTemperaturas, updateConfigTemperaturas, listPuntosConEstadoHoy } from "./queries";
+
+describe("temperaturas queries — base", () => {
+  beforeEach(async () => {
+    await query("TRUNCATE malaga.f_registro_temperaturas RESTART IDENTITY CASCADE");
+    await query(`UPDATE malaga.config_temperaturas SET temp_min = -14.0, temp_max = -12.0 WHERE id = 1`);
+  });
+
+  async function seedUser() {
+    const r = await query<{ id_user: number }>(
+      `INSERT INTO malaga.usuarios (email, password_hash, rol) VALUES ('t-temp@t.com', 'x', 'admin') RETURNING id_user`
+    );
+    return r.rows[0].id_user;
+  }
+
+  it("listPuntos devuelve los 8 puntos fijos", async () => {
+    const puntos = await listPuntos();
+    expect(puntos).toHaveLength(8);
+    expect(puntos.filter((p) => p.exhibidora === 1)).toHaveLength(4);
+    expect(puntos.filter((p) => p.exhibidora === 2)).toHaveLength(4);
+    expect(puntos.map((p) => `${p.lado}-${p.posicion}`).sort()).toEqual(
+      ["cliente-derecha", "cliente-izquierda", "obrador-derecha", "obrador-izquierda",
+       "cliente-derecha", "cliente-izquierda", "obrador-derecha", "obrador-izquierda"].sort()
+    );
+  });
+
+  it("getConfigTemperaturas y updateConfigTemperaturas leen y actualizan el rango", async () => {
+    const inicial = await getConfigTemperaturas();
+    expect(inicial.tempMin).toBe("-14.0");
+    expect(inicial.tempMax).toBe("-12.0");
+
+    await updateConfigTemperaturas(-16, -10);
+
+    const actualizado = await getConfigTemperaturas();
+    expect(actualizado.tempMin).toBe("-16.0");
+    expect(actualizado.tempMax).toBe("-10.0");
+  });
+
+  it("listPuntosConEstadoHoy marca dentro y fuera de rango correctamente", async () => {
+    const userRegistro = await seedUser();
+    const puntos = await listPuntos();
+    const [p1, p2, p3] = puntos;
+
+    await query(
+      `INSERT INTO malaga.f_registro_temperaturas (id_punto, temperatura, user_registro) VALUES ($1, -13.0, $2)`,
+      [p1.idPunto, userRegistro]
+    );
+    await query(
+      `INSERT INTO malaga.f_registro_temperaturas (id_punto, temperatura, user_registro) VALUES ($1, -8.0, $2)`,
+      [p2.idPunto, userRegistro]
+    );
+
+    const estado = await listPuntosConEstadoHoy();
+    const e1 = estado.find((e) => e.idPunto === p1.idPunto)!;
+    const e2 = estado.find((e) => e.idPunto === p2.idPunto)!;
+    const e3 = estado.find((e) => e.idPunto === p3.idPunto)!;
+
+    expect(e1.registradoHoy).toBe(true);
+    expect(e1.fueraDeRangoHoy).toBe(false);
+    expect(e2.registradoHoy).toBe(true);
+    expect(e2.fueraDeRangoHoy).toBe(true);
+    expect(e3.registradoHoy).toBe(false);
+    expect(e3.fueraDeRangoHoy).toBeNull();
+  });
+});
