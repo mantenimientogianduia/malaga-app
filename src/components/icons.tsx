@@ -138,3 +138,13 @@ export function IconUser(props: SVGProps<SVGSVGElement>) {
     </svg>
   );
 }
+
+export function IconAlert(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...base(props)}>
+      <path d="M12 4 21 19H3L12 4Z" />
+      <path d="M12 10v4" />
+      <circle cx="12" cy="16.5" r="0.6" fill="currentColor" />
+    </svg>
+  );
+}
