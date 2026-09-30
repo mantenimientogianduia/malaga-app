@@ -28,6 +28,29 @@ export function FinalizarForm({ orden }: { orden: OrdenParaFinalizar }) {
   const [tsIniLocal, setTsIniLocal] = useState(orden.tsIni ? toLocal(orden.tsIni) : nowLocal());
   const [tsFinLocal, setTsFinLocal] = useState(nowLocal());
 
+  const cantPlanNum = Number(orden.cantPlan);
+  const [cantReal, setCantReal] = useState(orden.cantPlan);
+  const [cantidades, setCantidades] = useState(() => orden.items.map((item) => item.cantSugerida));
+  const [tocados, setTocados] = useState<Set<number>>(new Set());
+
+  function handleCantRealChange(value: string) {
+    setCantReal(value);
+    const cantRealNum = Number(value);
+    if (!cantRealNum || !cantPlanNum) return;
+    setCantidades((prev) =>
+      prev.map((actual, i) =>
+        tocados.has(i)
+          ? actual
+          : ((Number(orden.items[i].cantSugerida) * cantRealNum) / cantPlanNum).toFixed(3)
+      )
+    );
+  }
+
+  function handleCantidadChange(i: number, value: string) {
+    setTocados((prev) => new Set(prev).add(i));
+    setCantidades((prev) => prev.map((actual, idx) => (idx === i ? value : actual)));
+  }
+
   return (
     <form action={formAction} className="flex max-w-xl flex-col gap-5">
       <input type="hidden" name="idOp" value={orden.idOp} />
@@ -43,7 +66,8 @@ export function FinalizarForm({ orden }: { orden: OrdenParaFinalizar }) {
             type="number"
             step="0.001"
             required
-            defaultValue={orden.cantPlan}
+            value={cantReal}
+            onChange={(e) => handleCantRealChange(e.target.value)}
             className="rounded-md border border-border bg-surface-raised px-3 py-2"
           />
         </label>
@@ -72,7 +96,7 @@ export function FinalizarForm({ orden }: { orden: OrdenParaFinalizar }) {
       {orden.items.length > 0 && (
         <div className="flex flex-col gap-3">
           <span className="text-sm font-medium text-ink">Consumo de ingredientes</span>
-          {orden.items.map((item) => (
+          {orden.items.map((item, i) => (
             <div key={item.idDetalleReceta} className="rounded-md border border-border p-3">
               <input type="hidden" name="idDetalleReceta" value={item.idDetalleReceta} />
               <input type="hidden" name="idSubprod" value={item.idSubprod} />
@@ -99,7 +123,8 @@ export function FinalizarForm({ orden }: { orden: OrdenParaFinalizar }) {
                   type="number"
                   step="0.001"
                   required
-                  defaultValue={item.cantSugerida}
+                  value={cantidades[i]}
+                  onChange={(e) => handleCantidadChange(i, e.target.value)}
                   className="w-28 rounded-md border border-border bg-surface-raised px-3 py-2 text-sm"
                 />
               </div>
