@@ -126,6 +126,55 @@ describe("exhibidora queries", () => {
     expect(vivo.rows.map((r) => r.lote)).toEqual(["L2"]);
   });
 
+  it("exhibirPartida con oficializarCambioAhora aplica el flip de la posición", async () => {
+    const userExhibicion = await seedUser();
+    const p1 = await createProducto({ detalle: "Vainilla", unidMed: "kg", tipoProducto: "PT", pesoEstandar: 4 });
+    const p2 = await createProducto({ detalle: "Chocolate", unidMed: "kg", tipoProducto: "PT", pesoEstandar: 4 });
+    const exhib = await query<{ id_exhibidora: number }>(
+      `INSERT INTO malaga.d_exhibidora (nro, id_prod, id_prod_fut, ts_cambio_programado)
+       VALUES (1, $1, $2, '2099-01-01') RETURNING id_exhibidora`,
+      [p1.idProd, p2.idProd]
+    );
+    const idExhibidora = exhib.rows[0].id_exhibidora;
+    const partida = await query<{ id_partistock: number }>(
+      `INSERT INTO malaga.f_partidas_stock (id_prod, cantidad, fecha_fab, lote)
+       VALUES ($1, 4, '2026-08-01', 'L1') RETURNING id_partistock`,
+      [p1.idProd]
+    );
+
+    await exhibirPartida(partida.rows[0].id_partistock, idExhibidora, userExhibicion, true);
+
+    const slots = await listCartillaActual();
+    const slot = slots.find((s) => s.idExhibidora === idExhibidora)!;
+    expect(slot.idProd).toBe(p2.idProd);
+    expect(slot.idProdAnt).toBe(p1.idProd);
+    expect(slot.idProdFut).toBeNull();
+  });
+
+  it("exhibirPartida sin oficializarCambioAhora no toca la posición", async () => {
+    const userExhibicion = await seedUser();
+    const p1 = await createProducto({ detalle: "Vainilla", unidMed: "kg", tipoProducto: "PT", pesoEstandar: 4 });
+    const p2 = await createProducto({ detalle: "Chocolate", unidMed: "kg", tipoProducto: "PT", pesoEstandar: 4 });
+    const exhib = await query<{ id_exhibidora: number }>(
+      `INSERT INTO malaga.d_exhibidora (nro, id_prod, id_prod_fut, ts_cambio_programado)
+       VALUES (1, $1, $2, '2099-01-01') RETURNING id_exhibidora`,
+      [p1.idProd, p2.idProd]
+    );
+    const idExhibidora = exhib.rows[0].id_exhibidora;
+    const partida = await query<{ id_partistock: number }>(
+      `INSERT INTO malaga.f_partidas_stock (id_prod, cantidad, fecha_fab, lote)
+       VALUES ($1, 4, '2026-08-01', 'L1') RETURNING id_partistock`,
+      [p1.idProd]
+    );
+
+    await exhibirPartida(partida.rows[0].id_partistock, idExhibidora, userExhibicion);
+
+    const slots = await listCartillaActual();
+    const slot = slots.find((s) => s.idExhibidora === idExhibidora)!;
+    expect(slot.idProd).toBe(p1.idProd);
+    expect(slot.idProdFut).toBe(p2.idProd);
+  });
+
   it("listPartidasEnObrador solo muestra partidas PT sin exhibir", async () => {
     const producto = await createProducto({ detalle: "Vainilla", unidMed: "kg", tipoProducto: "PT", pesoEstandar: 4 });
     await query(

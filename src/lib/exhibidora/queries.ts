@@ -1,4 +1,4 @@
-import { query } from "../db";
+import { query, withTransaction } from "../db";
 
 export interface CartillaSlot {
   idExhibidora: number;
@@ -129,14 +129,27 @@ export async function listPartidasEnObrador(): Promise<PartidaEnObrador[]> {
 export async function exhibirPartida(
   idPartida: number,
   idExhibidora: number,
-  userExhibicion: number
+  userExhibicion: number,
+  oficializarCambioAhora = false
 ): Promise<void> {
-  await query(
-    `UPDATE malaga.f_partidas_stock
-     SET ts_exhibicion = now(), id_exhibidora = $2, user_exhibicion = $3
-     WHERE id_partistock = $1`,
-    [idPartida, idExhibidora, userExhibicion]
-  );
+  await withTransaction(async (client) => {
+    await client.query(
+      `UPDATE malaga.f_partidas_stock
+       SET ts_exhibicion = now(), id_exhibidora = $2, user_exhibicion = $3
+       WHERE id_partistock = $1`,
+      [idPartida, idExhibidora, userExhibicion]
+    );
+
+    if (oficializarCambioAhora) {
+      await client.query(
+        `UPDATE malaga.d_exhibidora
+         SET id_prod_ant = id_prod, id_prod = id_prod_fut, id_prod_fut = NULL,
+             ts_ulticambio = now(), ts_cambio_programado = NULL
+         WHERE id_exhibidora = $1 AND id_prod_fut IS NOT NULL`,
+        [idExhibidora]
+      );
+    }
+  });
 }
 
 export interface ExhibicionReciente {
