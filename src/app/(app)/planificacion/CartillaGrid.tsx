@@ -4,7 +4,7 @@ import { useState } from "react";
 import type { CartillaSlot } from "@/lib/exhibidora/queries";
 import type { Producto } from "@/lib/productos/queries";
 import { formatFecha } from "@/lib/formatDate";
-import { programarCambioAction, cancelarCambioProgramadoAction } from "./actions";
+import { programarCambioAction, cancelarCambioProgramadoAction, oficializarCambioAction } from "./actions";
 
 function nowDate(): string {
   const d = new Date();
@@ -75,17 +75,26 @@ export function CartillaGrid({
             </div>
 
             {abierto.idProdFut && (
-              <div className="mb-4 flex items-center justify-between gap-2 rounded-lg bg-warn-tint p-3 text-xs text-warn">
+              <div className="mb-4 flex flex-col gap-2 rounded-lg bg-warn-tint p-3 text-xs text-warn">
                 <span>
-                  Cambia a <span className="font-semibold">{abierto.productoFutDetalle}</span> el{" "}
-                  {formatFecha(abierto.fechaCambioProgramado)}
+                  Previsto: cambia a <span className="font-semibold">{abierto.productoFutDetalle}</span> (~
+                  {formatFecha(abierto.fechaCambioProgramado)}) — se oficializa al exhibir la última bacha del
+                  actual, o manualmente acá.
                 </span>
-                <form action={cancelarCambioProgramadoAction}>
-                  <input type="hidden" name="idExhibidora" value={abierto.idExhibidora} />
-                  <button type="submit" className="font-semibold underline hover:no-underline">
-                    Cancelar
-                  </button>
-                </form>
+                <div className="flex items-center gap-3">
+                  <form action={oficializarCambioAction}>
+                    <input type="hidden" name="idExhibidora" value={abierto.idExhibidora} />
+                    <button type="submit" className="font-semibold underline hover:no-underline">
+                      Oficializar cambio ahora
+                    </button>
+                  </form>
+                  <form action={cancelarCambioProgramadoAction}>
+                    <input type="hidden" name="idExhibidora" value={abierto.idExhibidora} />
+                    <button type="submit" className="font-semibold underline hover:no-underline">
+                      Cancelar
+                    </button>
+                  </form>
+                </div>
               </div>
             )}
 
@@ -110,7 +119,7 @@ export function CartillaGrid({
                 </select>
               </label>
               <label className="flex flex-col gap-1 text-xs text-ink">
-                Fecha (hoy = cambio inmediato)
+                Fecha prevista (orientativa — el cambio se oficializa al exhibir la última bacha)
                 <input
                   name="fechaProgramada"
                   type="date"

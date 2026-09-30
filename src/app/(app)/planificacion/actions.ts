@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/auth/requireRole";
-import { programarCambio, cancelarCambioProgramado } from "@/lib/exhibidora/queries";
+import { programarCambio, cancelarCambioProgramado, oficializarCambio } from "@/lib/exhibidora/queries";
 
 export async function programarCambioAction(formData: FormData) {
   await requireRole(["gestion", "admin"]);
@@ -22,4 +22,14 @@ export async function cancelarCambioProgramadoAction(formData: FormData) {
 
   await cancelarCambioProgramado(idExhibidora);
   revalidatePath("/planificacion");
+}
+
+export async function oficializarCambioAction(formData: FormData) {
+  await requireRole(["gestion", "admin"]);
+  const idExhibidora = Number(formData.get("idExhibidora"));
+  if (!idExhibidora) return;
+
+  await oficializarCambio(idExhibidora);
+  revalidatePath("/planificacion");
+  revalidatePath("/exhibir");
 }
