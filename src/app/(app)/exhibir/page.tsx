@@ -9,13 +9,18 @@ import { ExhibirGroup } from "./ExhibirGroup";
 export default async function ExhibirPage() {
   const [slots, partidas] = await Promise.all([listCartillaActual(), listPartidasEnObrador()]);
 
-  const partidasPorSlot = new Map<number, PartidaEnObrador[]>();
+  const actualesPorSlot = new Map<number, PartidaEnObrador[]>();
+  const entrantesPorSlot = new Map<number, PartidaEnObrador[]>();
   const sinAsignar: PartidaEnObrador[] = [];
   for (const p of partidas) {
-    if (p.idExhibidoraDestino) {
-      const arr = partidasPorSlot.get(p.idExhibidoraDestino) ?? [];
+    if (p.idExhibidoraDestino && p.rolEnSlot === "actual") {
+      const arr = actualesPorSlot.get(p.idExhibidoraDestino) ?? [];
       arr.push(p);
-      partidasPorSlot.set(p.idExhibidoraDestino, arr);
+      actualesPorSlot.set(p.idExhibidoraDestino, arr);
+    } else if (p.idExhibidoraDestino && p.rolEnSlot === "entrante") {
+      const arr = entrantesPorSlot.get(p.idExhibidoraDestino) ?? [];
+      arr.push(p);
+      entrantesPorSlot.set(p.idExhibidoraDestino, arr);
     } else {
       sinAsignar.push(p);
     }
@@ -47,7 +52,8 @@ export default async function ExhibirPage() {
           <ExhibirSlot
             key={slot.idExhibidora}
             slot={slot}
-            partidas={partidasPorSlot.get(slot.idExhibidora) ?? []}
+            partidasActuales={actualesPorSlot.get(slot.idExhibidora) ?? []}
+            partidasEntrantes={entrantesPorSlot.get(slot.idExhibidora) ?? []}
           />
         ))}
       </div>
@@ -55,7 +61,8 @@ export default async function ExhibirPage() {
       {gruposSinAsignarOrdenados.length > 0 && (
         <div className="mt-8">
           <h2 className="mb-3 text-sm font-semibold text-warn">
-            Bachas sin posición asignada — el sabor no coincide con ninguna posición actual de la cartilla
+            Bachas sin posición asignada — el sabor no coincide con ninguna posición actual ni programada de
+            la cartilla
           </h2>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {gruposSinAsignarOrdenados.map((g) => (

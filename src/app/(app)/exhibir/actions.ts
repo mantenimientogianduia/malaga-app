@@ -9,9 +9,11 @@ export async function exhibirPartidaAction(formData: FormData) {
 
   const idPartida = Number(formData.get("idPartida"));
   const idExhibidora = Number(formData.get("idExhibidora"));
+  const oficializarCambioAhora = formData.get("oficializarCambioAhora") === "on";
   if (!idPartida || !idExhibidora) return;
 
-  await exhibirPartida(idPartida, idExhibidora, user.idUser);
+  await exhibirPartida(idPartida, idExhibidora, user.idUser, oficializarCambioAhora);
   revalidatePath("/exhibir");
+  revalidatePath("/planificacion");
   revalidatePath("/stock");
 }
