@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { query } from "../db";
 import { listPuntos, getConfigTemperaturas, updateConfigTemperaturas, listPuntosConEstadoHoy } from "./queries";
 
@@ -6,6 +6,18 @@ describe("temperaturas queries — base", () => {
   beforeEach(async () => {
     await query("TRUNCATE malaga.f_registro_temperaturas RESTART IDENTITY CASCADE");
     await query(`UPDATE malaga.config_temperaturas SET temp_min = -14.0, temp_max = -12.0 WHERE id = 1`);
+  });
+
+  afterEach(async () => {
+    // seedUser() inserta un usuario de prueba en la tabla REAL malaga.usuarios (compartida
+    // con el resto del ERP); a diferencia del beforeEach de arriba, acá NO se hace TRUNCATE
+    // de usuarios para no borrar cuentas reales. Se borra puntualmente sólo la fila de prueba,
+    // junto con cualquier registro que la haya referenciado (FK user_registro), para poder
+    // borrar el usuario sin violar la constraint.
+    await query(
+      `DELETE FROM malaga.f_registro_temperaturas WHERE user_registro IN (SELECT id_user FROM malaga.usuarios WHERE email = 't-temp@t.com')`
+    );
+    await query(`DELETE FROM malaga.usuarios WHERE email = 't-temp@t.com'`);
   });
 
   async function seedUser() {
