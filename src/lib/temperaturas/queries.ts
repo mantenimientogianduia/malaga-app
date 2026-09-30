@@ -90,3 +90,24 @@ export async function listPuntosConEstadoHoy(): Promise<PuntoConEstadoHoy[]> {
         : null,
   }));
 }
+
+export async function registrarTemperatura(
+  idPunto: number,
+  temperatura: number,
+  userRegistro: number
+): Promise<{ idRegistro: number }> {
+  const existente = await query<{ id_registro: number }>(
+    `SELECT id_registro FROM malaga.f_registro_temperaturas WHERE id_punto = $1 AND fecha = CURRENT_DATE`,
+    [idPunto]
+  );
+  if (existente.rows.length > 0) {
+    throw new Error("Ya se registró la temperatura de este punto hoy.");
+  }
+
+  const result = await query<{ id_registro: number }>(
+    `INSERT INTO malaga.f_registro_temperaturas (id_punto, temperatura, user_registro)
+     VALUES ($1, $2, $3) RETURNING id_registro`,
+    [idPunto, temperatura, userRegistro]
+  );
+  return { idRegistro: result.rows[0].id_registro };
+}

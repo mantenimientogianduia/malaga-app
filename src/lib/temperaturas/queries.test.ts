@@ -1,6 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { query } from "../db";
-import { listPuntos, getConfigTemperaturas, updateConfigTemperaturas, listPuntosConEstadoHoy } from "./queries";
+import {
+  listPuntos,
+  getConfigTemperaturas,
+  updateConfigTemperaturas,
+  listPuntosConEstadoHoy,
+  registrarTemperatura,
+} from "./queries";
 
 describe("temperaturas queries — base", () => {
   beforeEach(async () => {
@@ -75,5 +81,30 @@ describe("temperaturas queries — base", () => {
     expect(e2.fueraDeRangoHoy).toBe(true);
     expect(e3.registradoHoy).toBe(false);
     expect(e3.fueraDeRangoHoy).toBeNull();
+  });
+
+  it("registrarTemperatura inserta el registro de hoy", async () => {
+    const userRegistro = await seedUser();
+    const [punto] = await listPuntos();
+
+    const { idRegistro } = await registrarTemperatura(punto.idPunto, -13.5, userRegistro);
+
+    const fila = await query<{ temperatura: string; user_registro: number }>(
+      `SELECT temperatura, user_registro FROM malaga.f_registro_temperaturas WHERE id_registro = $1`,
+      [idRegistro]
+    );
+    expect(fila.rows[0].temperatura).toBe("-13.5");
+    expect(fila.rows[0].user_registro).toBe(userRegistro);
+  });
+
+  it("registrarTemperatura bloquea un segundo registro del mismo punto el mismo día", async () => {
+    const userRegistro = await seedUser();
+    const [punto] = await listPuntos();
+
+    await registrarTemperatura(punto.idPunto, -13.5, userRegistro);
+
+    await expect(registrarTemperatura(punto.idPunto, -13.0, userRegistro)).rejects.toThrow(
+      "Ya se registró la temperatura de este punto hoy."
+    );
   });
 });
