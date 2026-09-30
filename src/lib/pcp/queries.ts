@@ -178,8 +178,12 @@ export interface ProductoEnCartilla {
 export async function getProductosEnCartilla(): Promise<ProductoEnCartilla[]> {
   const result = await query<{ id_prod: number; detalle: string }>(
     `SELECT DISTINCT p.id_prod, p.detalle
-     FROM malaga.d_exhibidora e
-     JOIN malaga.d_productos p ON p.id_prod = e.id_prod
+     FROM malaga.d_productos p
+     WHERE p.id_prod IN (
+       SELECT id_prod FROM malaga.d_exhibidora
+       UNION
+       SELECT id_prod_fut FROM malaga.d_exhibidora WHERE id_prod_fut IS NOT NULL
+     )
      ORDER BY p.detalle`
   );
   return result.rows.map((r) => ({ idProd: r.id_prod, detalle: r.detalle }));

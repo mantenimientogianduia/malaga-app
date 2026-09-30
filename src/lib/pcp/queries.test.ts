@@ -193,13 +193,18 @@ describe("pcp queries — config, stock y pendientes por lote", () => {
     expect(pendientes.get(p.idProd)).toBe(35);
   });
 
-  it("getProductosEnCartilla devuelve solo los PT actualmente en un slot", async () => {
-    const enCartilla = await createProducto({ detalle: "Vainilla", unidMed: "kg", tipoProducto: "PT", pesoEstandar: 4 });
+  it("getProductosEnCartilla devuelve los PT actuales y los programados a futuro", async () => {
+    const actual = await createProducto({ detalle: "Vainilla", unidMed: "kg", tipoProducto: "PT", pesoEstandar: 4 });
+    const futuro = await createProducto({ detalle: "Chocolate", unidMed: "kg", tipoProducto: "PT", pesoEstandar: 4 });
     await createProducto({ detalle: "Frutilla", unidMed: "kg", tipoProducto: "PT", pesoEstandar: 4 });
-    await query(`INSERT INTO malaga.d_exhibidora (nro, id_prod) VALUES (1, $1)`, [enCartilla.idProd]);
+    await query(
+      `INSERT INTO malaga.d_exhibidora (nro, id_prod, id_prod_fut, ts_cambio_programado)
+       VALUES (1, $1, $2, '2099-01-01')`,
+      [actual.idProd, futuro.idProd]
+    );
 
     const productos = await getProductosEnCartilla();
-    expect(productos.map((p) => p.idProd)).toEqual([enCartilla.idProd]);
+    expect(productos.map((p) => p.idProd).sort()).toEqual([actual.idProd, futuro.idProd].sort());
   });
 
   it("getItemsRecetaSemiPorProducto trae solo ingredientes SEMI de la receta activa", async () => {
