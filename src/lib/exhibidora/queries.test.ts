@@ -7,6 +7,7 @@ import {
   listCartillaActual,
   programarCambio,
   cancelarCambioProgramado,
+  oficializarCambio,
 } from "./queries";
 
 describe("exhibidora queries", () => {
@@ -58,6 +59,42 @@ describe("exhibidora queries", () => {
     expect(slot.idProd).toBe(p1.idProd);
     expect(slot.idProdFut).toBeNull();
     expect(slot.fechaCambioProgramado).toBeNull();
+  });
+
+  it("oficializarCambio aplica el flip manualmente sin esperar la fecha", async () => {
+    const p1 = await createProducto({ detalle: "Vainilla", unidMed: "kg", tipoProducto: "PT", pesoEstandar: 4 });
+    const p2 = await createProducto({ detalle: "Chocolate", unidMed: "kg", tipoProducto: "PT", pesoEstandar: 4 });
+    const exhib = await query<{ id_exhibidora: number }>(
+      `INSERT INTO malaga.d_exhibidora (nro, id_prod) VALUES (1, $1) RETURNING id_exhibidora`,
+      [p1.idProd]
+    );
+    const idExhibidora = exhib.rows[0].id_exhibidora;
+
+    await programarCambio(idExhibidora, p2.idProd, "2099-01-01");
+    await oficializarCambio(idExhibidora);
+
+    const slots = await listCartillaActual();
+    const slot = slots.find((s) => s.idExhibidora === idExhibidora)!;
+    expect(slot.idProd).toBe(p2.idProd);
+    expect(slot.idProdAnt).toBe(p1.idProd);
+    expect(slot.idProdFut).toBeNull();
+    expect(slot.fechaCambioProgramado).toBeNull();
+  });
+
+  it("oficializarCambio no hace nada si no hay cambio programado", async () => {
+    const p1 = await createProducto({ detalle: "Vainilla", unidMed: "kg", tipoProducto: "PT", pesoEstandar: 4 });
+    const exhib = await query<{ id_exhibidora: number }>(
+      `INSERT INTO malaga.d_exhibidora (nro, id_prod) VALUES (1, $1) RETURNING id_exhibidora`,
+      [p1.idProd]
+    );
+    const idExhibidora = exhib.rows[0].id_exhibidora;
+
+    await oficializarCambio(idExhibidora);
+
+    const slots = await listCartillaActual();
+    const slot = slots.find((s) => s.idExhibidora === idExhibidora)!;
+    expect(slot.idProd).toBe(p1.idProd);
+    expect(slot.idProdAnt).toBeNull();
   });
 
   it("exhibir una partida la hace aparecer en stock vigente y reemplaza a la anterior del mismo slot", async () => {

@@ -68,6 +68,16 @@ export async function cancelarCambioProgramado(idExhibidora: number): Promise<vo
   );
 }
 
+export async function oficializarCambio(idExhibidora: number): Promise<void> {
+  await query(
+    `UPDATE malaga.d_exhibidora
+     SET id_prod_ant = id_prod, id_prod = id_prod_fut, id_prod_fut = NULL,
+         ts_ulticambio = now(), ts_cambio_programado = NULL
+     WHERE id_exhibidora = $1 AND id_prod_fut IS NOT NULL`,
+    [idExhibidora]
+  );
+}
+
 export async function listIdsEnCartillaOProgramados(): Promise<number[]> {
   const result = await query<{ id_prod: number }>(
     `SELECT id_prod FROM malaga.d_exhibidora
