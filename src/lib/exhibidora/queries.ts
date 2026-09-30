@@ -83,6 +83,15 @@ export async function cancelarCambioProgramado(idExhibidora: number): Promise<vo
   );
 }
 
+export async function listIdsEnCartillaOProgramados(): Promise<number[]> {
+  const result = await query<{ id_prod: number }>(
+    `SELECT id_prod FROM malaga.d_exhibidora
+     UNION
+     SELECT id_prod_fut FROM malaga.d_exhibidora WHERE id_prod_fut IS NOT NULL`
+  );
+  return result.rows.map((r) => r.id_prod);
+}
+
 export interface PartidaEnObrador {
   idPartida: number;
   idProd: number;

@@ -5,7 +5,13 @@ import { useSearchParams } from "next/navigation";
 import { crearOrdenAction } from "./actions";
 import type { ProductoParaOrden } from "@/lib/ordenes/queries";
 
-export function NuevaOrdenForm({ productos }: { productos: ProductoParaOrden[] }) {
+export function NuevaOrdenForm({
+  productos,
+  idsEnCartilla,
+}: {
+  productos: ProductoParaOrden[];
+  idsEnCartilla: number[];
+}) {
   const [state, formAction, pending] = useActionState(crearOrdenAction, undefined);
   const searchParams = useSearchParams();
   const today = new Date().toISOString().slice(0, 10);
@@ -14,12 +20,18 @@ export function NuevaOrdenForm({ productos }: { productos: ProductoParaOrden[] }
   const productoInicial = productos.find((p) => String(p.idProd) === idProdInicial);
 
   const sectores = Array.from(new Set(productos.map((p) => p.sector).filter((s): s is string => !!s))).sort();
+  const setIdsEnCartilla = new Set(idsEnCartilla);
 
   const [sectorSeleccionado, setSectorSeleccionado] = useState(productoInicial?.sector ?? "");
   const [idProdSeleccionado, setIdProdSeleccionado] = useState(productoInicial ? idProdInicial : "");
   const [cantPlan, setCantPlan] = useState(productoInicial?.pesoEstandar ?? "");
 
   const productosDelSector = productos.filter((p) => p.sector === sectorSeleccionado);
+  const productoSeleccionado = productos.find((p) => String(p.idProd) === idProdSeleccionado);
+  const fueraDeCartilla =
+    !!productoSeleccionado &&
+    productoSeleccionado.tipoProducto === "PT" &&
+    !setIdsEnCartilla.has(productoSeleccionado.idProd);
 
   function handleSectorChange(sector: string) {
     setSectorSeleccionado(sector);
@@ -72,6 +84,13 @@ export function NuevaOrdenForm({ productos }: { productos: ProductoParaOrden[] }
           ))}
         </select>
       </label>
+
+      {fueraDeCartilla && (
+        <p className="rounded-lg bg-warn-tint px-3 py-2 text-xs font-medium text-warn">
+          Este sabor no está en la cartilla actual ni tiene un cambio programado. Podés crear la orden igual,
+          pero puede que no haga falta producirlo.
+        </p>
+      )}
 
       <label className="flex flex-col gap-1 text-sm text-ink">
         Cantidad planificada
