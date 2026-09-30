@@ -95,6 +95,7 @@ export interface PartidaEnObrador {
   lote: string;
   fechaFab: string;
   idExhibidoraDestino: number | null;
+  rolEnSlot: "actual" | "entrante" | null;
 }
 
 export async function listPartidasEnObrador(): Promise<PartidaEnObrador[]> {
@@ -106,12 +107,18 @@ export async function listPartidasEnObrador(): Promise<PartidaEnObrador[]> {
     lote: string;
     fecha_fab: string;
     id_exhibidora_destino: number | null;
+    rol_en_slot: "actual" | "entrante" | null;
   }>(
     `SELECT ps.id_partistock, ps.id_prod, p.detalle AS producto_detalle, ps.cantidad, ps.lote,
-            ps.fecha_fab::text AS fecha_fab, e.id_exhibidora AS id_exhibidora_destino
+            ps.fecha_fab::text AS fecha_fab,
+            COALESCE(e_actual.id_exhibidora, e_fut.id_exhibidora) AS id_exhibidora_destino,
+            CASE WHEN e_actual.id_exhibidora IS NOT NULL THEN 'actual'
+                 WHEN e_fut.id_exhibidora IS NOT NULL THEN 'entrante'
+                 ELSE NULL END AS rol_en_slot
      FROM malaga.f_partidas_stock ps
      JOIN malaga.d_productos p ON p.id_prod = ps.id_prod
-     LEFT JOIN malaga.d_exhibidora e ON e.id_prod = ps.id_prod
+     LEFT JOIN malaga.d_exhibidora e_actual ON e_actual.id_prod = ps.id_prod
+     LEFT JOIN malaga.d_exhibidora e_fut ON e_fut.id_prod_fut = ps.id_prod
      WHERE p.tipo_producto = 'PT' AND ps.ts_exhibicion IS NULL
      ORDER BY ps.fecha_fab, ps.id_partistock`
   );
@@ -123,6 +130,7 @@ export async function listPartidasEnObrador(): Promise<PartidaEnObrador[]> {
     lote: r.lote,
     fechaFab: r.fecha_fab,
     idExhibidoraDestino: r.id_exhibidora_destino,
+    rolEnSlot: r.rol_en_slot,
   }));
 }
 

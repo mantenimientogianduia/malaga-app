@@ -175,20 +175,33 @@ describe("exhibidora queries", () => {
     expect(slot.idProdFut).toBe(p2.idProd);
   });
 
-  it("listPartidasEnObrador solo muestra partidas PT sin exhibir", async () => {
-    const producto = await createProducto({ detalle: "Vainilla", unidMed: "kg", tipoProducto: "PT", pesoEstandar: 4 });
+  it("listPartidasEnObrador solo muestra partidas PT sin exhibir, con su rol en la posición", async () => {
+    const actual = await createProducto({ detalle: "Vainilla", unidMed: "kg", tipoProducto: "PT", pesoEstandar: 4 });
+    const entrante = await createProducto({ detalle: "Chocolate", unidMed: "kg", tipoProducto: "PT", pesoEstandar: 4 });
+    await query(
+      `INSERT INTO malaga.d_exhibidora (nro, id_prod, id_prod_fut, ts_cambio_programado)
+       VALUES (1, $1, $2, '2099-01-01')`,
+      [actual.idProd, entrante.idProd]
+    );
     await query(
       `INSERT INTO malaga.f_partidas_stock (id_prod, cantidad, fecha_fab, lote)
        VALUES ($1, 4, '2026-08-01', 'L1')`,
-      [producto.idProd]
+      [actual.idProd]
+    );
+    await query(
+      `INSERT INTO malaga.f_partidas_stock (id_prod, cantidad, fecha_fab, lote)
+       VALUES ($1, 4, '2026-08-02', 'L2')`,
+      [entrante.idProd]
     );
     await query(
       `INSERT INTO malaga.f_partidas_stock (id_prod, cantidad, fecha_fab, lote, ts_exhibicion)
-       VALUES ($1, 4, '2026-08-02', 'L2', now())`,
-      [producto.idProd]
+       VALUES ($1, 4, '2026-08-02', 'L3', now())`,
+      [actual.idProd]
     );
 
     const enObrador = await listPartidasEnObrador();
-    expect(enObrador.map((p) => p.lote)).toEqual(["L1"]);
+    expect(enObrador.map((p) => p.lote)).toEqual(["L1", "L2"]);
+    expect(enObrador.find((p) => p.lote === "L1")!.rolEnSlot).toBe("actual");
+    expect(enObrador.find((p) => p.lote === "L2")!.rolEnSlot).toBe("entrante");
   });
 });
