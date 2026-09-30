@@ -1,7 +1,13 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { query } from "../db";
 import { createProducto } from "../productos/queries";
-import { listSaboresParaQuiebre, getQuiebreAbiertoPorProducto, crearQuiebre } from "./queries";
+import {
+  listSaboresParaQuiebre,
+  getQuiebreAbiertoPorProducto,
+  crearQuiebre,
+  listQuiebresAbiertos,
+  listQuiebresResueltos,
+} from "./queries";
 
 describe("quiebres queries", () => {
   beforeEach(async () => {
@@ -51,5 +57,30 @@ describe("quiebres queries", () => {
     await expect(crearQuiebre(producto.idProd, "2026-08-01T12:00:00Z", userCarga)).rejects.toThrow(
       "Ya hay un quiebre abierto para este sabor."
     );
+  });
+
+  it("listQuiebresAbiertos devuelve solo los no resueltos, ordenados por antigüedad", async () => {
+    const userCarga = await seedUser();
+    const p1 = await createProducto({ detalle: "Vainilla", unidMed: "kg", tipoProducto: "PT", pesoEstandar: 4 });
+    const p2 = await createProducto({ detalle: "Chocolate", unidMed: "kg", tipoProducto: "PT", pesoEstandar: 4 });
+    await crearQuiebre(p1.idProd, "2026-08-01T12:00:00Z", userCarga);
+    await crearQuiebre(p2.idProd, "2026-08-01T09:00:00Z", userCarga);
+
+    const abiertos = await listQuiebresAbiertos();
+    expect(abiertos.map((q) => q.productoDetalle)).toEqual(["Chocolate", "Vainilla"]);
+  });
+
+  it("listQuiebresResueltos calcula los minutos entre ts_quiebre_real y ts_repuesto", async () => {
+    const userCarga = await seedUser();
+    const producto = await createProducto({ detalle: "Vainilla", unidMed: "kg", tipoProducto: "PT", pesoEstandar: 4 });
+    const { idQuiebre } = await crearQuiebre(producto.idProd, "2026-08-01T10:00:00Z", userCarga);
+    await query(
+      `UPDATE malaga.f_quiebres SET ts_repuesto = '2026-08-01T11:30:00Z' WHERE id_quiebre = $1`,
+      [idQuiebre]
+    );
+
+    const resueltos = await listQuiebresResueltos();
+    expect(resueltos).toHaveLength(1);
+    expect(resueltos[0].minutosResolucion).toBe(90);
   });
 });
