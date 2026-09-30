@@ -42,7 +42,7 @@ export default async function ExhibirPage() {
         sabor, se recomienda siempre la más vieja primero.
       </p>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {slots.map((slot) => (
           <ExhibirSlot
             key={slot.idExhibidora}
@@ -57,7 +57,7 @@ export default async function ExhibirPage() {
           <h2 className="mb-3 text-sm font-semibold text-warn">
             Bachas sin posición asignada — el sabor no coincide con ninguna posición actual de la cartilla
           </h2>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {gruposSinAsignarOrdenados.map((g) => (
               <ExhibirGroup key={g.productoDetalle} productoDetalle={g.productoDetalle} partidas={g.partidas} />
             ))}
