@@ -35,6 +35,20 @@ describe("pcp queries — históricos", () => {
     );
   }
 
+  // Lunes (ISO dow 1) de la semana que empezó `semanasAtras` semanas antes de la semana
+  // actual (calculada en UTC, igual que date_trunc('week', ...) en Postgres). Se usa para
+  // generar fechas de fixture que siempre caen dentro de la ventana móvil de 8 semanas que
+  // usan getDistribucionPorDia/getDistribucionPorProducto, sin importar cuándo corra el test.
+  function lunesHaceSemanas(semanasAtras: number): Date {
+    const ahora = new Date();
+    const diaIso = ((ahora.getUTCDay() + 6) % 7) + 1; // 1=lunes..7=domingo
+    const lunesActual = new Date(
+      Date.UTC(ahora.getUTCFullYear(), ahora.getUTCMonth(), ahora.getUTCDate() - (diaIso - 1))
+    );
+    lunesActual.setUTCDate(lunesActual.getUTCDate() - semanasAtras * 7);
+    return lunesActual;
+  }
+
   it("getExhibicionesPorSemana suma cantidad de PT exhibida por semana, semanas completas nada más", async () => {
     const p = await createProducto({ detalle: "Vainilla", unidMed: "kg", tipoProducto: "PT", pesoEstandar: 4 });
     // Semana pasada completa (lunes 2026-07-27).
@@ -57,9 +71,13 @@ describe("pcp queries — históricos", () => {
 
   it("getDistribucionPorDia reparte % entre los días con exhibiciones", async () => {
     const p = await createProducto({ detalle: "Vainilla", unidMed: "kg", tipoProducto: "PT", pesoEstandar: 4 });
-    // 2026-07-27 es lunes (ISO 1), 2026-07-28 es martes (ISO 2).
-    await exhibir(p.idProd, "2026-07-27T10:00:00Z", 30);
-    await exhibir(p.idProd, "2026-07-28T10:00:00Z", 70);
+    // Lunes y martes de una semana completa, holgadamente dentro de la ventana de 8
+    // semanas y lejos del límite de la semana actual (2 semanas atrás).
+    const lunes = lunesHaceSemanas(2);
+    const martes = new Date(lunes);
+    martes.setUTCDate(martes.getUTCDate() + 1);
+    await exhibir(p.idProd, new Date(lunes.getTime() + 10 * 3600 * 1000).toISOString(), 30);
+    await exhibir(p.idProd, new Date(martes.getTime() + 10 * 3600 * 1000).toISOString(), 70);
 
     const distribucion = await getDistribucionPorDia(8);
     expect(distribucion[1]).toBeCloseTo(0.3, 5);
@@ -71,8 +89,10 @@ describe("pcp queries — históricos", () => {
     const fueraDeCartilla = await createProducto({ detalle: "Frutilla", unidMed: "kg", tipoProducto: "PT", pesoEstandar: 4 });
     await query(`INSERT INTO malaga.d_exhibidora (nro, id_prod) VALUES (1, $1)`, [enCartilla.idProd]);
 
-    await exhibir(enCartilla.idProd, "2026-07-27T10:00:00Z", 40);
-    await exhibir(fueraDeCartilla.idProd, "2026-07-27T10:00:00Z", 60);
+    // Holgadamente dentro de la ventana de 8 semanas y lejos del límite de la semana actual.
+    const fecha = new Date(lunesHaceSemanas(2).getTime() + 10 * 3600 * 1000).toISOString();
+    await exhibir(enCartilla.idProd, fecha, 40);
+    await exhibir(fueraDeCartilla.idProd, fecha, 60);
 
     const distribucion = await getDistribucionPorProducto(8);
     expect(distribucion[enCartilla.idProd]).toBeCloseTo(1, 5);
