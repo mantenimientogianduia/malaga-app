@@ -13,22 +13,7 @@ export interface CartillaSlot {
   fechaCambioProgramado: string | null;
 }
 
-// Un cambio programado se aplica solo (recorre id_prod -> id_prod_ant, id_prod_fut ->
-// id_prod) la primera vez que alguien lee la cartilla en o después de la fecha elegida.
-// No hay un cron separado: para un local con 2-3 personas que revisan la pantalla todos
-// los días esto alcanza, sin necesitar infraestructura de jobs programados.
-async function aplicarCambiosVencidos(): Promise<void> {
-  await query(
-    `UPDATE malaga.d_exhibidora
-     SET id_prod_ant = id_prod, id_prod = id_prod_fut, id_prod_fut = NULL,
-         ts_ulticambio = ts_cambio_programado, ts_cambio_programado = NULL
-     WHERE id_prod_fut IS NOT NULL AND ts_cambio_programado::date <= CURRENT_DATE`
-  );
-}
-
 export async function listCartillaActual(): Promise<CartillaSlot[]> {
-  await aplicarCambiosVencidos();
-
   const result = await query<{
     id_exhibidora: number;
     nro: number;
