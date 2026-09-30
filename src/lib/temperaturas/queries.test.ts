@@ -6,6 +6,9 @@ import {
   updateConfigTemperaturas,
   listPuntosConEstadoHoy,
   registrarTemperatura,
+  listHistorialReciente,
+  getResumen30Dias,
+  deshacerRegistroTemperatura,
 } from "./queries";
 
 describe("temperaturas queries — base", () => {
@@ -106,5 +109,50 @@ describe("temperaturas queries — base", () => {
     await expect(registrarTemperatura(punto.idPunto, -13.0, userRegistro)).rejects.toThrow(
       "Ya se registró la temperatura de este punto hoy."
     );
+  });
+
+  it("listHistorialReciente marca fuera de rango y ordena por más reciente primero", async () => {
+    const userRegistro = await seedUser();
+    const [p1, p2] = await listPuntos();
+    const { idRegistro: idNormal } = await registrarTemperatura(p1.idPunto, -13.0, userRegistro);
+    const { idRegistro: idDesvio } = await registrarTemperatura(p2.idPunto, -5.0, userRegistro);
+
+    const historial = await listHistorialReciente();
+    expect(historial.map((h) => h.idRegistro)).toEqual([idDesvio, idNormal]);
+    expect(historial.find((h) => h.idRegistro === idDesvio)!.fueraDeRango).toBe(true);
+    expect(historial.find((h) => h.idRegistro === idNormal)!.fueraDeRango).toBe(false);
+  });
+
+  it("getResumen30Dias calcula promedio y cantidad de desvíos por punto", async () => {
+    const userRegistro = await seedUser();
+    const [punto] = await listPuntos();
+    await query(
+      `INSERT INTO malaga.f_registro_temperaturas (id_punto, temperatura, user_registro, ts_registro)
+       VALUES ($1, -13.0, $2, now() - interval '2 days')`,
+      [punto.idPunto, userRegistro]
+    );
+    await query(
+      `INSERT INTO malaga.f_registro_temperaturas (id_punto, temperatura, user_registro, ts_registro)
+       VALUES ($1, -5.0, $2, now() - interval '1 day')`,
+      [punto.idPunto, userRegistro]
+    );
+
+    const resumen = await getResumen30Dias();
+    const fila = resumen.find((r) => r.idPunto === punto.idPunto)!;
+    expect(fila.promedio).toBeCloseTo(-9.0, 5);
+    expect(fila.desvios).toBe(1);
+  });
+
+  it("deshacerRegistroTemperatura borra el registro y libera el punto para hoy", async () => {
+    const userRegistro = await seedUser();
+    const [punto] = await listPuntos();
+    const { idRegistro } = await registrarTemperatura(punto.idPunto, -13.0, userRegistro);
+
+    await deshacerRegistroTemperatura(idRegistro);
+
+    const estado = await listPuntosConEstadoHoy();
+    expect(estado.find((e) => e.idPunto === punto.idPunto)!.registradoHoy).toBe(false);
+    // Vuelve a poder registrarse el mismo día sin error:
+    await expect(registrarTemperatura(punto.idPunto, -13.5, userRegistro)).resolves.toBeTruthy();
   });
 });

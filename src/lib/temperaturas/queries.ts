@@ -111,3 +111,77 @@ export async function registrarTemperatura(
   );
   return { idRegistro: result.rows[0].id_registro };
 }
+
+export interface RegistroTemperatura {
+  idRegistro: number;
+  puntoDetalle: string;
+  temperatura: string;
+  tsRegistro: string;
+  userRegistro: string | null;
+  fueraDeRango: boolean;
+}
+
+export async function listHistorialReciente(limite = 40): Promise<RegistroTemperatura[]> {
+  const config = await getConfigTemperaturas();
+  const result = await query<{
+    id_registro: number;
+    punto_detalle: string;
+    temperatura: string;
+    ts_registro: string;
+    user_registro: string | null;
+  }>(
+    `SELECT r.id_registro, p.detalle AS punto_detalle, r.temperatura,
+            r.ts_registro::text AS ts_registro, u.email AS user_registro
+     FROM malaga.f_registro_temperaturas r
+     JOIN malaga.d_puntos_temperatura p ON p.id_punto = r.id_punto
+     LEFT JOIN malaga.usuarios u ON u.id_user = r.user_registro
+     ORDER BY r.ts_registro DESC
+     LIMIT $1`,
+    [limite]
+  );
+  return result.rows.map((r) => ({
+    idRegistro: r.id_registro,
+    puntoDetalle: r.punto_detalle,
+    temperatura: r.temperatura,
+    tsRegistro: r.ts_registro,
+    userRegistro: r.user_registro,
+    fueraDeRango:
+      Number(r.temperatura) < Number(config.tempMin) || Number(r.temperatura) > Number(config.tempMax),
+  }));
+}
+
+export interface ResumenPunto {
+  idPunto: number;
+  puntoDetalle: string;
+  promedio: number;
+  desvios: number;
+}
+
+export async function getResumen30Dias(): Promise<ResumenPunto[]> {
+  const config = await getConfigTemperaturas();
+  const result = await query<{
+    id_punto: number;
+    punto_detalle: string;
+    promedio: string;
+    desvios: string;
+  }>(
+    `SELECT p.id_punto, p.detalle AS punto_detalle, AVG(r.temperatura) AS promedio,
+            COUNT(*) FILTER (WHERE r.temperatura < $1 OR r.temperatura > $2) AS desvios
+     FROM malaga.d_puntos_temperatura p
+     JOIN malaga.f_registro_temperaturas r ON r.id_punto = p.id_punto
+     WHERE r.ts_registro >= now() - interval '30 days'
+     GROUP BY p.id_punto, p.detalle
+     ORDER BY p.detalle`,
+    [config.tempMin, config.tempMax]
+  );
+  return result.rows.map((r) => ({
+    idPunto: r.id_punto,
+    puntoDetalle: r.punto_detalle,
+    promedio: Number(r.promedio),
+    desvios: Number(r.desvios),
+  }));
+}
+
+export async function deshacerRegistroTemperatura(idRegistro: number): Promise<void> {
+  await query(`DELETE FROM malaga.f_registro_temperaturas WHERE id_registro = $1`, [idRegistro]);
+}
