@@ -13,7 +13,7 @@ import {
 describe("exhibidora queries", () => {
   beforeEach(async () => {
     await query(
-      "TRUNCATE malaga.f_partidas_stock, malaga.d_exhibidora, malaga.d_productos, malaga.usuarios RESTART IDENTITY CASCADE"
+      "TRUNCATE malaga.f_quiebres, malaga.f_partidas_stock, malaga.d_exhibidora, malaga.d_productos, malaga.usuarios RESTART IDENTITY CASCADE"
     );
   });
 
@@ -173,6 +173,55 @@ describe("exhibidora queries", () => {
     const slot = slots.find((s) => s.idExhibidora === idExhibidora)!;
     expect(slot.idProd).toBe(p1.idProd);
     expect(slot.idProdFut).toBe(p2.idProd);
+  });
+
+  it("exhibirPartida cierra un quiebre abierto del mismo producto", async () => {
+    const userExhibicion = await seedUser();
+    const producto = await createProducto({ detalle: "Vainilla", unidMed: "kg", tipoProducto: "PT", pesoEstandar: 4 });
+    const exhib = await query<{ id_exhibidora: number }>(
+      `INSERT INTO malaga.d_exhibidora (nro, id_prod) VALUES (1, $1) RETURNING id_exhibidora`,
+      [producto.idProd]
+    );
+    const idExhibidora = exhib.rows[0].id_exhibidora;
+    const quiebre = await query<{ id_quiebre: number }>(
+      `INSERT INTO malaga.f_quiebres (id_prod, ts_quiebre_real, user_carga)
+       VALUES ($1, '2026-08-01T10:00:00Z', $2) RETURNING id_quiebre`,
+      [producto.idProd, userExhibicion]
+    );
+    const partida = await query<{ id_partistock: number }>(
+      `INSERT INTO malaga.f_partidas_stock (id_prod, cantidad, fecha_fab, lote)
+       VALUES ($1, 4, '2026-08-01', 'L1') RETURNING id_partistock`,
+      [producto.idProd]
+    );
+
+    await exhibirPartida(partida.rows[0].id_partistock, idExhibidora, userExhibicion);
+
+    const cerrado = await query<{ ts_repuesto: string | null; id_partida_repuso: number | null }>(
+      `SELECT ts_repuesto, id_partida_repuso FROM malaga.f_quiebres WHERE id_quiebre = $1`,
+      [quiebre.rows[0].id_quiebre]
+    );
+    expect(cerrado.rows[0].ts_repuesto).not.toBeNull();
+    expect(cerrado.rows[0].id_partida_repuso).toBe(partida.rows[0].id_partistock);
+  });
+
+  it("exhibirPartida no hace nada si no hay quiebre abierto para el producto", async () => {
+    const userExhibicion = await seedUser();
+    const producto = await createProducto({ detalle: "Vainilla", unidMed: "kg", tipoProducto: "PT", pesoEstandar: 4 });
+    const exhib = await query<{ id_exhibidora: number }>(
+      `INSERT INTO malaga.d_exhibidora (nro, id_prod) VALUES (1, $1) RETURNING id_exhibidora`,
+      [producto.idProd]
+    );
+    const idExhibidora = exhib.rows[0].id_exhibidora;
+    const partida = await query<{ id_partistock: number }>(
+      `INSERT INTO malaga.f_partidas_stock (id_prod, cantidad, fecha_fab, lote)
+       VALUES ($1, 4, '2026-08-01', 'L1') RETURNING id_partistock`,
+      [producto.idProd]
+    );
+
+    await exhibirPartida(partida.rows[0].id_partistock, idExhibidora, userExhibicion);
+
+    const count = await query<{ count: string }>(`SELECT count(*) FROM malaga.f_quiebres`);
+    expect(Number(count.rows[0].count)).toBe(0);
   });
 
   it("listPartidasEnObrador solo muestra partidas PT sin exhibir, con su rol en la posición", async () => {

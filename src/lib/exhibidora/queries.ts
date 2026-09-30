@@ -141,12 +141,14 @@ export async function exhibirPartida(
   oficializarCambioAhora = false
 ): Promise<void> {
   await withTransaction(async (client) => {
-    await client.query(
+    const partidaResult = await client.query<{ id_prod: number }>(
       `UPDATE malaga.f_partidas_stock
        SET ts_exhibicion = now(), id_exhibidora = $2, user_exhibicion = $3
-       WHERE id_partistock = $1`,
+       WHERE id_partistock = $1
+       RETURNING id_prod`,
       [idPartida, idExhibidora, userExhibicion]
     );
+    const idProd = partidaResult.rows[0].id_prod;
 
     if (oficializarCambioAhora) {
       await client.query(
@@ -157,6 +159,13 @@ export async function exhibirPartida(
         [idExhibidora]
       );
     }
+
+    await client.query(
+      `UPDATE malaga.f_quiebres
+       SET ts_repuesto = now(), id_partida_repuso = $2
+       WHERE id_prod = $1 AND ts_repuesto IS NULL`,
+      [idProd, idPartida]
+    );
   });
 }
 
