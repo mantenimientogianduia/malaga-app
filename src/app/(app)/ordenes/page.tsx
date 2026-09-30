@@ -1,92 +1,73 @@
 import Link from "next/link";
 import { listOrdenes } from "@/lib/ordenes/queries";
-import { formatFecha } from "@/lib/formatDate";
-import { ElapsedClock } from "./ElapsedClock";
-import { IniciarControls } from "./IniciarControls";
-
-const ESTADO_LABEL: Record<string, string> = {
-  planificada: "Planificada",
-  en_proceso: "En proceso",
-  finalizada: "Finalizada",
-  cancelada: "Cancelada",
-};
-
-const ESTADO_CLASS: Record<string, string> = {
-  planificada: "bg-surface-raised text-ink-soft",
-  en_proceso: "bg-warn-tint text-warn",
-  finalizada: "bg-ok-tint text-ok",
-  cancelada: "bg-bad-tint text-bad",
-};
+import { IconClipboard } from "@/components/icons";
+import { OrdenesTable } from "./OrdenesTable";
 
 export default async function OrdenesPage() {
   const ordenes = await listOrdenes();
 
+  const activas = ordenes.filter((o) => o.estado === "planificada" || o.estado === "en_proceso");
+  const historial = ordenes.filter((o) => o.estado === "finalizada" || o.estado === "cancelada");
+
+  const activasCoccion = activas.filter((o) => o.sector === "COCCION");
+  const activasFabricacion = activas.filter((o) => o.sector === "FABRICACION");
+  const activasSinSector = activas.filter((o) => o.sector !== "COCCION" && o.sector !== "FABRICACION");
+
   return (
     <div className="p-6 sm:p-8 lg:p-10">
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-ink">Órdenes de producción</h1>
+        <div className="flex items-center gap-2">
+          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-copper-tint text-copper-strong">
+            <IconClipboard className="h-4 w-4" />
+          </span>
+          <div>
+            <p className="page-eyebrow leading-none">Producción</p>
+            <h1 className="text-xl font-semibold text-ink">Órdenes de producción</h1>
+          </div>
+        </div>
         <Link
           href="/ordenes/nueva"
-          className="rounded-md bg-copper px-3.5 py-1.5 text-xs font-semibold text-white"
+          className="rounded-md bg-copper px-3.5 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-copper-strong"
         >
           Nueva OP
         </Link>
       </div>
 
-      <div className="card overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-border text-left text-[10px] uppercase tracking-wide text-ink-soft">
-              <th className="px-3.5 py-2.5">OP</th>
-              <th className="px-3.5 py-2.5">Producto</th>
-              <th className="px-3.5 py-2.5 text-right">Plan</th>
-              <th className="px-3.5 py-2.5 text-right">Real</th>
-              <th className="px-3.5 py-2.5">Fecha plan</th>
-              <th className="px-3.5 py-2.5">Estado</th>
-              <th className="px-3.5 py-2.5"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {ordenes.map((o) => (
-              <tr key={o.idOp} className="border-b border-border transition-colors last:border-0 hover:bg-surface-raised">
-                <td className="px-3.5 py-2.5 font-mono text-ink-soft">OP-{o.idOp}</td>
-                <td className="px-3.5 py-2.5 font-medium text-ink">{o.productoDetalle}</td>
-                <td className="px-3.5 py-2.5 text-right font-mono text-ink-soft">{o.cantPlan}</td>
-                <td className="px-3.5 py-2.5 text-right font-mono text-ink-soft">{o.cantReal ?? "—"}</td>
-                <td className="px-3.5 py-2.5 text-ink-soft">{formatFecha(o.fechaPlan)}</td>
-                <td className="px-3.5 py-2.5">
-                  <span
-                    className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10.5px] font-semibold ${ESTADO_CLASS[o.estado]}`}
-                  >
-                    {ESTADO_LABEL[o.estado]}
-                    {o.estado === "en_proceso" && o.tsIni && <ElapsedClock tsIni={o.tsIni} />}
-                  </span>
-                </td>
-                <td className="px-3.5 py-2.5">
-                  <div className="flex items-center gap-3">
-                    {o.estado === "planificada" && <IniciarControls idOp={o.idOp} />}
-                    {(o.estado === "planificada" || o.estado === "en_proceso") && (
-                      <Link
-                        href={`/ordenes/${o.idOp}/finalizar`}
-                        className="whitespace-nowrap text-xs font-medium text-copper hover:text-copper-strong"
-                      >
-                        Finalizar
-                      </Link>
-                    )}
-                  </div>
-                </td>
-              </tr>
-            ))}
-            {ordenes.length === 0 && (
-              <tr>
-                <td colSpan={7} className="px-3.5 py-8 text-center text-ink-soft">
-                  Todavía no hay órdenes de producción.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+      <div className="mb-3 flex items-center gap-2">
+        <h2 className="text-sm font-semibold text-ink">Pendientes y en proceso</h2>
+        <span className="rounded-full bg-warn-tint px-2 py-0.5 text-[10.5px] font-semibold text-warn">
+          {activas.length}
+        </span>
       </div>
+      <div className="mb-8 grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <div>
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-soft">Cocción</p>
+          <OrdenesTable ordenes={activasCoccion} vacioTexto="Sin órdenes pendientes de cocción." />
+        </div>
+        <div>
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-soft">Fabricación</p>
+          <OrdenesTable ordenes={activasFabricacion} vacioTexto="Sin órdenes pendientes de fabricación." />
+        </div>
+      </div>
+
+      {activasSinSector.length > 0 && (
+        <div className="mb-8">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-soft">Sin sector</p>
+          <OrdenesTable ordenes={activasSinSector} vacioTexto="" />
+        </div>
+      )}
+
+      <div className="mb-3 flex items-center gap-2">
+        <h2 className="text-sm font-semibold text-ink">Historial</h2>
+        <span className="rounded-full bg-surface-raised px-2 py-0.5 text-[10.5px] font-semibold text-ink-soft">
+          {historial.length}
+        </span>
+      </div>
+      <OrdenesTable
+        ordenes={historial}
+        vacioTexto="Todavía no hay órdenes finalizadas ni canceladas."
+        columnaSector
+      />
     </div>
   );
 }

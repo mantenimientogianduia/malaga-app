@@ -6,6 +6,7 @@ export interface OrdenProduccion {
   idOp: number;
   idProd: number;
   productoDetalle: string;
+  sector: string | null;
   cantPlan: string;
   cantReal: string | null;
   fechaPlan: string;
@@ -18,6 +19,7 @@ interface OrdenRow {
   id_op: number;
   id_prod: number;
   producto_detalle: string;
+  sector: string | null;
   cant_plan: string;
   cant_real: string | null;
   fecha_plan: string;
@@ -31,6 +33,7 @@ function mapOrdenRow(row: OrdenRow): OrdenProduccion {
     idOp: row.id_op,
     idProd: row.id_prod,
     productoDetalle: row.producto_detalle,
+    sector: row.sector,
     cantPlan: row.cant_plan,
     cantReal: row.cant_real,
     fechaPlan: row.fecha_plan,
@@ -40,7 +43,7 @@ function mapOrdenRow(row: OrdenRow): OrdenProduccion {
   };
 }
 
-const ORDEN_SELECT = `o.id_op, o.id_prod, p.detalle AS producto_detalle, o.cant_plan, o.cant_real,
+const ORDEN_SELECT = `o.id_op, o.id_prod, p.detalle AS producto_detalle, p.sector, o.cant_plan, o.cant_real,
        o.fecha_plan::text AS fecha_plan, o.fecha_real::text AS fecha_real, o.ts_ini, o.estado`;
 
 export async function listOrdenes(): Promise<OrdenProduccion[]> {
