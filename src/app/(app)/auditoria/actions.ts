@@ -5,6 +5,7 @@ import { requireRole } from "@/lib/auth/requireRole";
 import { deshacerExhibicion } from "@/lib/exhibidora/queries";
 import { cancelarOrdenPlanificada, deshacerInicio, deshacerFinalizacion } from "@/lib/ordenes/queries";
 import { deshacerCierreRemanente } from "@/lib/stock/queries";
+import { deshacerRegistroTemperatura } from "@/lib/temperaturas/queries";
 
 export async function deshacerExhibicionAction(formData: FormData) {
   await requireRole(["gestion", "admin"]);
@@ -56,4 +57,15 @@ export async function deshacerCierreAction(formData: FormData) {
   await deshacerCierreRemanente(idPartida);
   revalidatePath("/auditoria");
   revalidatePath("/stock");
+}
+
+export async function deshacerRegistroTemperaturaAction(formData: FormData) {
+  await requireRole(["gestion", "admin"]);
+  const idRegistro = Number(formData.get("idRegistro"));
+  if (!idRegistro) return;
+
+  await deshacerRegistroTemperatura(idRegistro);
+  revalidatePath("/auditoria");
+  revalidatePath("/temperaturas");
+  revalidatePath("/");
 }

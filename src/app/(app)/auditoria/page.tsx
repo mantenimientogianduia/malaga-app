@@ -2,14 +2,16 @@ import { requireRole } from "@/lib/auth/requireRole";
 import { listExhibicionesRecientes } from "@/lib/exhibidora/queries";
 import { listOrdenesRecientes } from "@/lib/ordenes/queries";
 import { listCierresRecientes } from "@/lib/stock/queries";
+import { listHistorialReciente } from "@/lib/temperaturas/queries";
 import { formatFechaHora } from "@/lib/formatDate";
-import { IconHistory, IconStorefront, IconClipboard, IconFlask } from "@/components/icons";
+import { IconHistory, IconStorefront, IconClipboard, IconFlask, IconThermometer } from "@/components/icons";
 import {
   deshacerExhibicionAction,
   cancelarOrdenAction,
   deshacerInicioAction,
   deshacerFinalizacionAction,
   deshacerCierreAction,
+  deshacerRegistroTemperaturaAction,
 } from "./actions";
 
 const ESTADO_LABEL: Record<string, string> = {
@@ -27,10 +29,11 @@ const MOTIVO_LABEL: Record<string, string> = {
 export default async function AuditoriaPage() {
   await requireRole(["gestion", "admin"]);
 
-  const [exhibiciones, ordenes, cierres] = await Promise.all([
+  const [exhibiciones, ordenes, cierres, registrosTemperatura] = await Promise.all([
     listExhibicionesRecientes(),
     listOrdenesRecientes(),
     listCierresRecientes(),
+    listHistorialReciente(15),
   ]);
 
   return (
@@ -167,6 +170,39 @@ export default async function AuditoriaPage() {
             )}
           </div>
         </section>
+      </div>
+
+      <div className="mt-6">
+        <div className="mb-3 flex items-center gap-2">
+          <IconThermometer className="h-4 w-4 text-copper" />
+          <h2 className="text-sm font-semibold text-ink">Registros de temperatura recientes</h2>
+        </div>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+          {registrosTemperatura.map((r) => (
+            <div key={r.idRegistro} className="card flex items-center justify-between gap-3 p-3">
+              <div className="min-w-0">
+                <div className="truncate text-xs font-medium text-ink">{r.puntoDetalle}</div>
+                <div className="font-mono text-[10.5px] text-ink-soft">
+                  {r.temperatura}°C · {formatFechaHora(r.tsRegistro)}
+                  {r.userRegistro ? ` · ${r.userRegistro}` : ""}
+                  {r.fueraDeRango ? " · fuera de rango" : ""}
+                </div>
+              </div>
+              <form action={deshacerRegistroTemperaturaAction} className="flex-none">
+                <input type="hidden" name="idRegistro" value={r.idRegistro} />
+                <button
+                  type="submit"
+                  className="whitespace-nowrap rounded-md border border-border px-2.5 py-1 text-[10.5px] font-semibold text-ink-soft transition-colors hover:border-bad hover:text-bad"
+                >
+                  Deshacer
+                </button>
+              </form>
+            </div>
+          ))}
+          {registrosTemperatura.length === 0 && (
+            <p className="card py-6 text-center text-sm text-ink-soft">Sin registros de temperatura.</p>
+          )}
+        </div>
       </div>
     </div>
   );
