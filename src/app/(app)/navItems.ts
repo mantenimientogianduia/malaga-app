@@ -9,6 +9,7 @@ import {
   IconHistory,
   IconTrendUp,
   IconAlert,
+  IconThermometer,
 } from "@/components/icons";
 
 export const NAV_ITEMS = [
@@ -17,6 +18,7 @@ export const NAV_ITEMS = [
   { href: "/pcp", label: "PCP", icon: IconTrendUp },
   { href: "/exhibir", label: "Exhibir", icon: IconStorefront },
   { href: "/quiebres", label: "Quiebres", icon: IconAlert },
+  { href: "/temperaturas", label: "Temperaturas", icon: IconThermometer },
   { href: "/productos", label: "Productos", icon: IconBox },
   { href: "/recetas", label: "Recetas", icon: IconFlask },
   { href: "/ordenes", label: "Órdenes", icon: IconClipboard },

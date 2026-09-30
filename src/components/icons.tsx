@@ -148,3 +148,12 @@ export function IconAlert(props: SVGProps<SVGSVGElement>) {
     </svg>
   );
 }
+
+export function IconThermometer(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...base(props)}>
+      <path d="M12 3.5a2 2 0 0 0-2 2v9.09a3.5 3.5 0 1 0 4 0V5.5a2 2 0 0 0-2-2Z" />
+      <circle cx="12" cy="17" r="1" fill="currentColor" />
+    </svg>
+  );
+}
