@@ -111,7 +111,9 @@ export function GrillaTemperaturas({
                     ? abierto.registradoHoy
                       ? "Editar temperatura"
                       : "Cargar temperatura"
-                    : "Temperatura de hoy"}
+                    : abierto.registradoHoy
+                      ? "Temperatura de hoy"
+                      : "Sin registrar"}
                 </h2>
               </div>
               <button type="button" onClick={() => setAbiertoId(null)} className="text-ink-soft hover:text-ink">
