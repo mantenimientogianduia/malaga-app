@@ -7,14 +7,25 @@ const pool = new Pool({
   user: process.env.PGUSER,
   password: process.env.PGPASSWORD,
   // Verificación de certificado SIEMPRE activa (rejectUnauthorized: true — nunca
-  // desactivar esto). La CA de Cloud SQL se confía vía NODE_EXTRA_CA_CERTS, no acá.
-  // checkServerIdentity se omite a propósito: el certificado de Cloud SQL está
-  // emitido para un nombre interno de Google (*.sql.goog), no para la IP pública
-  // con la que nos conectamos sin el Cloud SQL Auth Proxy. La cadena de confianza
-  // (CA) se sigue validando igual; sólo se salta la comparación exacta de hostname.
+  // desactivar esto). checkServerIdentity se omite a propósito: el certificado de
+  // Cloud SQL está emitido para un nombre interno de Google (*.sql.goog), no para
+  // la IP pública con la que nos conectamos sin el Cloud SQL Auth Proxy. La cadena
+  // de confianza (CA) se sigue validando igual; sólo se salta la comparación exacta
+  // de hostname.
+  //
+  // La CA se confía de dos formas posibles: localmente, vía NODE_EXTRA_CA_CERTS
+  // apuntando a certs/server-ca.pem (un archivo, no versionado). En un entorno sin
+  // filesystem persistente como Vercel no hay archivo que apuntar, así que ahí se
+  // usa PGSSLROOTCERT_CONTENT con el contenido del certificado pegado directo como
+  // variable de entorno. Si no está seteada, el comportamiento es exactamente el de
+  // siempre (depende de NODE_EXTRA_CA_CERTS).
   ssl:
     process.env.PGSSLMODE === "require"
-      ? { rejectUnauthorized: true, checkServerIdentity: () => undefined }
+      ? {
+          rejectUnauthorized: true,
+          checkServerIdentity: () => undefined,
+          ...(process.env.PGSSLROOTCERT_CONTENT ? { ca: process.env.PGSSLROOTCERT_CONTENT } : {}),
+        }
       : undefined,
   options: `-c search_path=${process.env.PG_SCHEMA ?? "malaga"}`,
 });
