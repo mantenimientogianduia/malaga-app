@@ -64,7 +64,17 @@ function ExhibidoraGrid({
   );
 }
 
-export function GrillaTemperaturas({ puntos, tempMin, tempMax }: { puntos: PuntoConEstadoHoy[]; tempMin: string; tempMax: string }) {
+export function GrillaTemperaturas({
+  puntos,
+  tempMin,
+  tempMax,
+  cerrado,
+}: {
+  puntos: PuntoConEstadoHoy[];
+  tempMin: string;
+  tempMax: string;
+  cerrado: boolean;
+}) {
   const [abiertoId, setAbiertoId] = useState<number | null>(null);
   const abierto = puntos.find((p) => p.idPunto === abiertoId) ?? null;
   const [state, formAction, pending] = useActionState(registrarTemperaturaAction, undefined);
@@ -77,6 +87,8 @@ export function GrillaTemperaturas({ puntos, tempMin, tempMax }: { puntos: Punto
     setLastHandledState(state);
     if (state && !state.error) setAbiertoId(null);
   }
+
+  const mostrarForm = abierto !== null && !cerrado;
 
   return (
     <>
@@ -95,7 +107,11 @@ export function GrillaTemperaturas({ puntos, tempMin, tempMax }: { puntos: Punto
               <div>
                 <p className="page-eyebrow mb-1">{abierto.detalle}</p>
                 <h2 className="text-base font-semibold text-ink">
-                  {abierto.registradoHoy ? "Temperatura de hoy" : "Cargar temperatura"}
+                  {mostrarForm
+                    ? abierto.registradoHoy
+                      ? "Editar temperatura"
+                      : "Cargar temperatura"
+                    : "Temperatura de hoy"}
                 </h2>
               </div>
               <button type="button" onClick={() => setAbiertoId(null)} className="text-ink-soft hover:text-ink">
@@ -103,17 +119,8 @@ export function GrillaTemperaturas({ puntos, tempMin, tempMax }: { puntos: Punto
               </button>
             </div>
 
-            {abierto.registradoHoy ? (
-              <div
-                className={`rounded-lg p-3 text-sm ${
-                  abierto.fueraDeRangoHoy ? "bg-bad-tint text-bad" : "bg-ok-tint text-ok"
-                }`}
-              >
-                {abierto.temperaturaHoy}°C
-                {abierto.fueraDeRangoHoy ? " — fuera del rango normal" : " — dentro del rango normal"}
-              </div>
-            ) : (
-              <form action={formAction} className="flex flex-col gap-3">
+            {mostrarForm ? (
+              <form key={abierto.idPunto} action={formAction} className="flex flex-col gap-3">
                 <input type="hidden" name="idPunto" value={abierto.idPunto} />
                 <label className="flex flex-col gap-1 text-sm text-ink">
                   Temperatura (°C)
@@ -123,6 +130,7 @@ export function GrillaTemperaturas({ puntos, tempMin, tempMax }: { puntos: Punto
                     step="0.1"
                     required
                     autoFocus
+                    defaultValue={abierto.temperaturaHoy ?? ""}
                     className="rounded-md border border-border bg-surface-raised px-3 py-2"
                   />
                 </label>
@@ -138,6 +146,19 @@ export function GrillaTemperaturas({ puntos, tempMin, tempMax }: { puntos: Punto
                   {pending ? "Guardando..." : "Guardar"}
                 </button>
               </form>
+            ) : abierto.registradoHoy ? (
+              <div
+                className={`rounded-lg p-3 text-sm ${
+                  abierto.fueraDeRangoHoy ? "bg-bad-tint text-bad" : "bg-ok-tint text-ok"
+                }`}
+              >
+                {abierto.temperaturaHoy}°C
+                {abierto.fueraDeRangoHoy ? " — fuera del rango normal" : " — dentro del rango normal"}
+              </div>
+            ) : (
+              <p className="rounded-lg bg-surface-raised p-3 text-sm text-ink-soft">
+                No se cargó este punto y el día ya está cerrado.
+              </p>
             )}
           </div>
         </div>
