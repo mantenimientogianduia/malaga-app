@@ -5,9 +5,12 @@ import { createReceta, listRecetasActivas } from "./queries";
 
 describe("recetas queries", () => {
   beforeEach(async () => {
+    // malaga.usuarios NO se trunca acá — es la tabla real de cuentas del
+    // sistema. Las tablas que le hacen referencia sí se truncan arriba.
     await query(
-      "TRUNCATE malaga.recetas_detalles, malaga.recetas, malaga.d_productos, malaga.usuarios RESTART IDENTITY CASCADE"
+      "TRUNCATE malaga.recetas_detalles, malaga.recetas, malaga.d_productos RESTART IDENTITY CASCADE"
     );
+    await query("DELETE FROM malaga.usuarios WHERE email = 't@t.com'");
   });
 
   async function seedUser() {

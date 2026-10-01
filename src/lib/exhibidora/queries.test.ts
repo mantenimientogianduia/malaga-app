@@ -12,9 +12,14 @@ import {
 
 describe("exhibidora queries", () => {
   beforeEach(async () => {
+    // malaga.usuarios NO se trunca acá — es la tabla real de cuentas del
+    // sistema. Las tablas que le hacen referencia sí se truncan arriba, así
+    // que para cuando se borra la fila de prueba de más abajo ya no hay
+    // ninguna fila que la referencie.
     await query(
-      "TRUNCATE malaga.f_quiebres, malaga.f_partidas_stock, malaga.d_exhibidora, malaga.d_productos, malaga.usuarios RESTART IDENTITY CASCADE"
+      "TRUNCATE malaga.f_quiebres, malaga.f_partidas_stock, malaga.d_exhibidora, malaga.d_productos RESTART IDENTITY CASCADE"
     );
+    await query("DELETE FROM malaga.usuarios WHERE email = 't@t.com'");
   });
 
   async function seedUser() {

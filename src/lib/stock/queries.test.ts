@@ -5,9 +5,10 @@ import { cerrarRemanenteSemi, listStockSemiVivo } from "./queries";
 
 describe("stock queries", () => {
   beforeEach(async () => {
-    await query(
-      "TRUNCATE malaga.f_partidas_stock, malaga.d_productos, malaga.usuarios RESTART IDENTITY CASCADE"
-    );
+    // malaga.usuarios NO se trunca acá — es la tabla real de cuentas del
+    // sistema. Las tablas que le hacen referencia sí se truncan arriba.
+    await query("TRUNCATE malaga.f_partidas_stock, malaga.d_productos RESTART IDENTITY CASCADE");
+    await query("DELETE FROM malaga.usuarios WHERE email = 't@t.com'");
   });
 
   async function seedUser() {

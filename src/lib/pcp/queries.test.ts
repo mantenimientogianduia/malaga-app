@@ -142,9 +142,12 @@ describe("pcp queries — factores", () => {
 
 describe("pcp queries — config, stock y pendientes por lote", () => {
   beforeEach(async () => {
+    // malaga.usuarios NO se trunca acá — es la tabla real de cuentas del
+    // sistema. Las tablas que le hacen referencia sí se truncan arriba.
     await query(
-      "TRUNCATE malaga.f_trazabilidad_op, malaga.f_partidas_stock, malaga.f_ordenes_produccion, malaga.recetas_detalles, malaga.recetas, malaga.d_exhibidora, malaga.d_productos, malaga.usuarios RESTART IDENTITY CASCADE"
+      "TRUNCATE malaga.f_trazabilidad_op, malaga.f_partidas_stock, malaga.f_ordenes_produccion, malaga.recetas_detalles, malaga.recetas, malaga.d_exhibidora, malaga.d_productos RESTART IDENTITY CASCADE"
     );
+    await query("DELETE FROM malaga.usuarios WHERE email = 't@t.com'");
   });
 
   async function seedUser() {
@@ -249,9 +252,12 @@ describe("pcp queries — config, stock y pendientes por lote", () => {
 
 describe("calcularPlanManana", () => {
   beforeEach(async () => {
+    // malaga.usuarios NO se trunca acá — es la tabla real de cuentas del
+    // sistema. Las tablas que le hacen referencia sí se truncan arriba.
     await query(
-      "TRUNCATE malaga.f_trazabilidad_op, malaga.f_partidas_stock, malaga.f_ordenes_produccion, malaga.recetas_detalles, malaga.recetas, malaga.d_exhibidora, malaga.d_productos, malaga.pcp_factor_producto, malaga.usuarios RESTART IDENTITY CASCADE"
+      "TRUNCATE malaga.f_trazabilidad_op, malaga.f_partidas_stock, malaga.f_ordenes_produccion, malaga.recetas_detalles, malaga.recetas, malaga.d_exhibidora, malaga.d_productos, malaga.pcp_factor_producto RESTART IDENTITY CASCADE"
     );
+    await query("DELETE FROM malaga.usuarios WHERE email = 't@t.com'");
     await query("UPDATE malaga.pcp_factor_dia_semana SET factor = 1.0");
   });
 
@@ -325,9 +331,12 @@ describe("calcularPlanManana", () => {
 
 describe("generarPlanManana", () => {
   beforeEach(async () => {
+    // malaga.usuarios NO se trunca acá — es la tabla real de cuentas del
+    // sistema. Las tablas que le hacen referencia sí se truncan arriba.
     await query(
-      "TRUNCATE malaga.f_pcp_pronostico, malaga.f_trazabilidad_op, malaga.f_partidas_stock, malaga.f_ordenes_produccion, malaga.d_productos, malaga.usuarios RESTART IDENTITY CASCADE"
+      "TRUNCATE malaga.f_pcp_pronostico, malaga.f_trazabilidad_op, malaga.f_partidas_stock, malaga.f_ordenes_produccion, malaga.d_productos RESTART IDENTITY CASCADE"
     );
+    await query("DELETE FROM malaga.usuarios WHERE email = 't@t.com'");
   });
 
   async function seedUser() {

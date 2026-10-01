@@ -14,9 +14,12 @@ import {
 
 describe("ordenes de produccion queries", () => {
   beforeEach(async () => {
+    // malaga.usuarios NO se trunca acá — es la tabla real de cuentas del
+    // sistema. Las tablas que le hacen referencia sí se truncan arriba.
     await query(
-      "TRUNCATE malaga.f_trazabilidad_op, malaga.f_partidas_stock, malaga.f_ordenes_produccion, malaga.recetas_detalles, malaga.recetas, malaga.d_productos, malaga.usuarios RESTART IDENTITY CASCADE"
+      "TRUNCATE malaga.f_trazabilidad_op, malaga.f_partidas_stock, malaga.f_ordenes_produccion, malaga.recetas_detalles, malaga.recetas, malaga.d_productos RESTART IDENTITY CASCADE"
     );
+    await query("DELETE FROM malaga.usuarios WHERE email = 't@t.com'");
   });
 
   async function seedUser() {
