@@ -2,7 +2,12 @@
 
 import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/auth/requireRole";
-import { registrarTemperatura, updateConfigTemperaturas } from "@/lib/temperaturas/queries";
+import {
+  registrarTemperatura,
+  updateConfigTemperaturas,
+  cerrarDia,
+  reabrirDia,
+} from "@/lib/temperaturas/queries";
 
 export async function registrarTemperaturaAction(
   _prevState: { error?: string } | undefined,
@@ -43,5 +48,39 @@ export async function actualizarConfigTemperaturasAction(
 
   await updateConfigTemperaturas(tempMin, tempMax);
   revalidatePath("/temperaturas");
+  return {};
+}
+
+export async function cerrarDiaTemperaturasAction(
+  _prevState: { error?: string } | undefined,
+  _formData: FormData
+) {
+  const user = await requireRole(["gestion", "admin", "produccion"]);
+
+  try {
+    await cerrarDia(user.idUser);
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "No se pudo cerrar el día." };
+  }
+
+  revalidatePath("/temperaturas");
+  revalidatePath("/");
+  return {};
+}
+
+export async function reabrirDiaTemperaturasAction(
+  _prevState: { error?: string } | undefined,
+  _formData: FormData
+) {
+  await requireRole(["gestion", "admin"]);
+
+  try {
+    await reabrirDia();
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "No se pudo reabrir el día." };
+  }
+
+  revalidatePath("/temperaturas");
+  revalidatePath("/");
   return {};
 }
