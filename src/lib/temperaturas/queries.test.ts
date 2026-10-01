@@ -130,13 +130,13 @@ describe("temperaturas queries — base", () => {
     const userRegistro = await seedUser();
     const [punto] = await listPuntos();
     await query(
-      `INSERT INTO malaga.f_registro_temperaturas (id_punto, temperatura, user_registro, ts_registro)
-       VALUES ($1, -13.0, $2, now() - interval '2 days')`,
+      `INSERT INTO malaga.f_registro_temperaturas (id_punto, temperatura, user_registro, ts_registro, fecha)
+       VALUES ($1, -13.0, $2, now() - interval '2 days', CURRENT_DATE - interval '2 days')`,
       [punto.idPunto, userRegistro]
     );
     await query(
-      `INSERT INTO malaga.f_registro_temperaturas (id_punto, temperatura, user_registro, ts_registro)
-       VALUES ($1, -5.0, $2, now() - interval '1 day')`,
+      `INSERT INTO malaga.f_registro_temperaturas (id_punto, temperatura, user_registro, ts_registro, fecha)
+       VALUES ($1, -5.0, $2, now() - interval '1 day', CURRENT_DATE - interval '1 day')`,
       [punto.idPunto, userRegistro]
     );
 
