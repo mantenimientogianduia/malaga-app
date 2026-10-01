@@ -16,7 +16,7 @@ import {
 
 describe("temperaturas queries — base", () => {
   beforeEach(async () => {
-    await query("TRUNCATE malaga.f_registro_temperaturas RESTART IDENTITY CASCADE");
+    await query("TRUNCATE malaga.f_registro_temperaturas, malaga.f_cierre_temperaturas RESTART IDENTITY CASCADE");
     await query(`UPDATE malaga.config_temperaturas SET temp_min = -14.0, temp_max = -12.0 WHERE id = 1`);
   });
 
@@ -181,6 +181,21 @@ describe("temperaturas queries — base", () => {
     expect(estado.find((e) => e.idPunto === punto.idPunto)!.registradoHoy).toBe(false);
     // Vuelve a poder registrarse el mismo día sin error:
     await expect(registrarTemperatura(punto.idPunto, -13.5, userRegistro)).resolves.toBeTruthy();
+  });
+
+  it("deshacerRegistroTemperatura rechaza si el día de ese registro está cerrado", async () => {
+    const userRegistro = await seedUser();
+    const [punto] = await listPuntos();
+    const { idRegistro } = await registrarTemperatura(punto.idPunto, -13.0, userRegistro);
+
+    await cerrarDia(userRegistro);
+
+    await expect(deshacerRegistroTemperatura(idRegistro)).rejects.toThrow(
+      "No se puede deshacer: el día de ese registro está cerrado y firmado."
+    );
+
+    const fila = await query(`SELECT 1 FROM malaga.f_registro_temperaturas WHERE id_registro = $1`, [idRegistro]);
+    expect(fila.rows).toHaveLength(1);
   });
 
   it("cerrarDia crea el cierre de hoy, getCierreHoy lo refleja y reabrirDia lo libera", async () => {

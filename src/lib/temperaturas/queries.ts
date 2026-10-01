@@ -183,6 +183,17 @@ export async function getResumen30Dias(): Promise<ResumenPunto[]> {
 }
 
 export async function deshacerRegistroTemperatura(idRegistro: number): Promise<void> {
+  const registro = await query<{ fecha: string }>(
+    `SELECT fecha::text AS fecha FROM malaga.f_registro_temperaturas WHERE id_registro = $1`,
+    [idRegistro]
+  );
+  const fecha = registro.rows[0]?.fecha;
+  if (fecha) {
+    const cierre = await query(`SELECT 1 FROM malaga.f_cierre_temperaturas WHERE fecha = $1`, [fecha]);
+    if (cierre.rows.length > 0) {
+      throw new Error("No se puede deshacer: el día de ese registro está cerrado y firmado.");
+    }
+  }
   await query(`DELETE FROM malaga.f_registro_temperaturas WHERE id_registro = $1`, [idRegistro]);
 }
 
