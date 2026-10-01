@@ -9,6 +9,9 @@ import {
   listHistorialReciente,
   getResumen30Dias,
   deshacerRegistroTemperatura,
+  getCierreHoy,
+  cerrarDia,
+  reabrirDia,
 } from "./queries";
 
 describe("temperaturas queries — base", () => {
@@ -154,5 +157,19 @@ describe("temperaturas queries — base", () => {
     expect(estado.find((e) => e.idPunto === punto.idPunto)!.registradoHoy).toBe(false);
     // Vuelve a poder registrarse el mismo día sin error:
     await expect(registrarTemperatura(punto.idPunto, -13.5, userRegistro)).resolves.toBeTruthy();
+  });
+
+  it("cerrarDia crea el cierre de hoy, getCierreHoy lo refleja y reabrirDia lo libera", async () => {
+    const userCierre = await seedUser();
+
+    expect(await getCierreHoy()).toBeNull();
+
+    await cerrarDia(userCierre);
+    const cierre = await getCierreHoy();
+    expect(cierre).not.toBeNull();
+    expect(cierre!.userCierre).toBe("t-temp@t.com");
+
+    await reabrirDia();
+    expect(await getCierreHoy()).toBeNull();
   });
 });

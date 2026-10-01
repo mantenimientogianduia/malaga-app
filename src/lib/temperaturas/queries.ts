@@ -185,3 +185,33 @@ export async function getResumen30Dias(): Promise<ResumenPunto[]> {
 export async function deshacerRegistroTemperatura(idRegistro: number): Promise<void> {
   await query(`DELETE FROM malaga.f_registro_temperaturas WHERE id_registro = $1`, [idRegistro]);
 }
+
+export interface CierreTemperaturas {
+  fecha: string;
+  tsCierre: string;
+  userCierre: string;
+}
+
+export async function getCierreHoy(): Promise<CierreTemperaturas | null> {
+  const result = await query<{ fecha: string; ts_cierre: string; user_cierre: string }>(
+    `SELECT c.fecha::text AS fecha, c.ts_cierre::text AS ts_cierre, u.email AS user_cierre
+     FROM malaga.f_cierre_temperaturas c
+     JOIN malaga.usuarios u ON u.id_user = c.user_cierre
+     WHERE c.fecha = CURRENT_DATE`
+  );
+  const row = result.rows[0];
+  if (!row) return null;
+  return { fecha: row.fecha, tsCierre: row.ts_cierre, userCierre: row.user_cierre };
+}
+
+export async function cerrarDia(userCierre: number): Promise<void> {
+  await query(
+    `INSERT INTO malaga.f_cierre_temperaturas (fecha, user_cierre) VALUES (CURRENT_DATE, $1)
+     ON CONFLICT (fecha) DO NOTHING`,
+    [userCierre]
+  );
+}
+
+export async function reabrirDia(): Promise<void> {
+  await query(`DELETE FROM malaga.f_cierre_temperaturas WHERE fecha = CURRENT_DATE`);
+}
