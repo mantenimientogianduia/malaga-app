@@ -4,23 +4,27 @@ import {
   getConfigTemperaturas,
   listHistorialReciente,
   getResumen30Dias,
+  getCierreHoy,
 } from "@/lib/temperaturas/queries";
 import { formatFechaHora } from "@/lib/formatDate";
 import { IconThermometer } from "@/components/icons";
 import { GrillaTemperaturas } from "./GrillaTemperaturas";
 import { ConfigTemperaturasForm } from "./ConfigTemperaturasForm";
+import { CierreDiaControls } from "./CierreDiaControls";
 
 export default async function TemperaturasPage() {
   const user = await requireRole(["gestion", "admin", "produccion"]);
 
-  const [puntos, config, historial, resumen] = await Promise.all([
+  const [puntos, config, historial, resumen, cierre] = await Promise.all([
     listPuntosConEstadoHoy(),
     getConfigTemperaturas(),
     listHistorialReciente(),
     getResumen30Dias(),
+    getCierreHoy(),
   ]);
 
   const puedeEditarRango = user.rol === "gestion" || user.rol === "admin";
+  const completos = puntos.filter((p) => p.registradoHoy).length;
 
   return (
     <div className="p-6 sm:p-8 lg:p-10">
@@ -44,7 +48,9 @@ export default async function TemperaturasPage() {
         )}
       </div>
 
-      <GrillaTemperaturas puntos={puntos} tempMin={config.tempMin} tempMax={config.tempMax} />
+      <CierreDiaControls cierre={cierre} puedeReabrir={puedeEditarRango} completos={completos} total={puntos.length} />
+
+      <GrillaTemperaturas puntos={puntos} tempMin={config.tempMin} tempMax={config.tempMax} cerrado={cierre !== null} />
 
       <div className="mt-8">
         <h2 className="mb-3 text-sm font-semibold text-ink">Promedio y desvíos (últimos 30 días)</h2>
