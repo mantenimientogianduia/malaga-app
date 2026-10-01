@@ -14,21 +14,18 @@ export default async function Home() {
         Elegí un módulo en el menú de la izquierda para empezar.
       </p>
 
-      {!cierre && faltan > 0 && (
+      {!cierre && (
         <Link
           href="/temperaturas"
-          className="block rounded-lg bg-warn-tint px-4 py-3 text-sm font-medium text-warn transition-colors hover:bg-warn-tint/80"
+          className={`block rounded-lg px-4 py-3 text-sm font-medium transition-colors ${
+            faltan > 0
+              ? "bg-warn-tint text-warn hover:bg-warn-tint/80"
+              : "bg-copper-tint text-copper-strong hover:bg-copper-tint/80"
+          }`}
         >
-          Faltan cargar {faltan} de 8 temperaturas de hoy — tocá para ir a Temperaturas.
-        </Link>
-      )}
-
-      {!cierre && faltan === 0 && (
-        <Link
-          href="/temperaturas"
-          className="block rounded-lg bg-warn-tint px-4 py-3 text-sm font-medium text-warn transition-colors hover:bg-warn-tint/80"
-        >
-          Las temperaturas de hoy están completas — falta cerrar y firmar el día.
+          {faltan > 0
+            ? `Faltan cargar ${faltan} de 8 temperaturas de hoy — tocá para ir a Temperaturas.`
+            : "Las temperaturas de hoy están completas — tocá para ir a Temperaturas y cerrar el día."}
         </Link>
       )}
     </div>
