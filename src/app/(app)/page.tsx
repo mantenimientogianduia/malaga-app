@@ -1,10 +1,10 @@
 import Link from "next/link";
 import { requireUser } from "@/lib/auth/requireRole";
-import { listPuntosConEstadoHoy } from "@/lib/temperaturas/queries";
+import { listPuntosConEstadoHoy, getCierreHoy } from "@/lib/temperaturas/queries";
 
 export default async function Home() {
   const user = await requireUser();
-  const puntos = await listPuntosConEstadoHoy();
+  const [puntos, cierre] = await Promise.all([listPuntosConEstadoHoy(), getCierreHoy()]);
   const faltan = puntos.filter((p) => !p.registradoHoy).length;
 
   return (
@@ -14,12 +14,21 @@ export default async function Home() {
         Elegí un módulo en el menú de la izquierda para empezar.
       </p>
 
-      {faltan > 0 && (
+      {!cierre && faltan > 0 && (
         <Link
           href="/temperaturas"
           className="block rounded-lg bg-warn-tint px-4 py-3 text-sm font-medium text-warn transition-colors hover:bg-warn-tint/80"
         >
           Faltan cargar {faltan} de 8 temperaturas de hoy — tocá para ir a Temperaturas.
+        </Link>
+      )}
+
+      {!cierre && faltan === 0 && (
+        <Link
+          href="/temperaturas"
+          className="block rounded-lg bg-warn-tint px-4 py-3 text-sm font-medium text-warn transition-colors hover:bg-warn-tint/80"
+        >
+          Las temperaturas de hoy están completas — falta cerrar y firmar el día.
         </Link>
       )}
     </div>
