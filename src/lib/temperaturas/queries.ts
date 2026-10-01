@@ -96,17 +96,17 @@ export async function registrarTemperatura(
   temperatura: number,
   userRegistro: number
 ): Promise<{ idRegistro: number }> {
-  const existente = await query<{ id_registro: number }>(
-    `SELECT id_registro FROM malaga.f_registro_temperaturas WHERE id_punto = $1 AND fecha = CURRENT_DATE`,
-    [idPunto]
-  );
-  if (existente.rows.length > 0) {
-    throw new Error("Ya se registró la temperatura de este punto hoy.");
+  const cierre = await query(`SELECT 1 FROM malaga.f_cierre_temperaturas WHERE fecha = CURRENT_DATE`);
+  if (cierre.rows.length > 0) {
+    throw new Error("El día ya está cerrado y firmado. Reabrilo para poder cargar o editar.");
   }
 
   const result = await query<{ id_registro: number }>(
     `INSERT INTO malaga.f_registro_temperaturas (id_punto, temperatura, user_registro)
-     VALUES ($1, $2, $3) RETURNING id_registro`,
+     VALUES ($1, $2, $3)
+     ON CONFLICT (id_punto, fecha) DO UPDATE
+       SET temperatura = EXCLUDED.temperatura, ts_registro = now(), user_registro = EXCLUDED.user_registro
+     RETURNING id_registro`,
     [idPunto, temperatura, userRegistro]
   );
   return { idRegistro: result.rows[0].id_registro };

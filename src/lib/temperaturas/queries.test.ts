@@ -29,6 +29,9 @@ describe("temperaturas queries — base", () => {
     await query(
       `DELETE FROM malaga.f_registro_temperaturas WHERE user_registro IN (SELECT id_user FROM malaga.usuarios WHERE email = 't-temp@t.com')`
     );
+    await query(
+      `DELETE FROM malaga.f_cierre_temperaturas WHERE user_cierre IN (SELECT id_user FROM malaga.usuarios WHERE email = 't-temp@t.com')`
+    );
     await query(`DELETE FROM malaga.usuarios WHERE email = 't-temp@t.com'`);
   });
 
@@ -103,14 +106,35 @@ describe("temperaturas queries — base", () => {
     expect(fila.rows[0].user_registro).toBe(userRegistro);
   });
 
-  it("registrarTemperatura bloquea un segundo registro del mismo punto el mismo día", async () => {
+  it("registrarTemperatura edita el valor si el punto ya tiene registro de hoy y el día está abierto", async () => {
     const userRegistro = await seedUser();
     const [punto] = await listPuntos();
 
-    await registrarTemperatura(punto.idPunto, -13.5, userRegistro);
+    const primero = await registrarTemperatura(punto.idPunto, -13.5, userRegistro);
+    const segundo = await registrarTemperatura(punto.idPunto, -13.0, userRegistro);
+
+    expect(segundo.idRegistro).toBe(primero.idRegistro);
+
+    const fila = await query<{ temperatura: string }>(
+      `SELECT temperatura FROM malaga.f_registro_temperaturas WHERE id_registro = $1`,
+      [primero.idRegistro]
+    );
+    expect(fila.rows[0].temperatura).toBe("-13.0");
+
+    const count = await query<{ count: string }>(
+      `SELECT COUNT(*) FROM malaga.f_registro_temperaturas WHERE id_punto = $1`,
+      [punto.idPunto]
+    );
+    expect(Number(count.rows[0].count)).toBe(1);
+  });
+
+  it("registrarTemperatura rechaza cargar o editar si el día ya está cerrado", async () => {
+    const userRegistro = await seedUser();
+    const [punto] = await listPuntos();
+    await cerrarDia(userRegistro);
 
     await expect(registrarTemperatura(punto.idPunto, -13.0, userRegistro)).rejects.toThrow(
-      "Ya se registró la temperatura de este punto hoy."
+      "El día ya está cerrado y firmado. Reabrilo para poder cargar o editar."
     );
   });
 
