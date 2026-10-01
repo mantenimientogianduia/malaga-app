@@ -27,6 +27,7 @@ export function Sidebar({ user }: { user: SessionUser }) {
             <Link
               key={href}
               href={href}
+              prefetch={false}
               className={`group flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] font-medium transition-colors ${
                 active
                   ? "bg-white/[0.08] text-[#f8efe1]"
@@ -49,6 +50,7 @@ export function Sidebar({ user }: { user: SessionUser }) {
         </div>
         <Link
           href="/cuenta"
+          prefetch={false}
           className={`w-full rounded-lg px-2 py-1.5 text-left text-[11px] font-medium transition-colors hover:bg-white/[0.05] hover:text-copper ${
             pathname.startsWith("/cuenta") ? "text-copper" : "text-[#8a7458]"
           }`}

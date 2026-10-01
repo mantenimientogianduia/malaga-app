@@ -35,6 +35,7 @@ export function MobileNav({ user }: { user: SessionUser }) {
               <div className="flex items-center gap-1">
                 <Link
                   href="/cuenta"
+                  prefetch={false}
                   onClick={() => setOpen(false)}
                   className="rounded-lg px-2.5 py-1.5 text-[11px] font-medium text-[#8a7458] transition-colors hover:bg-white/[0.05] hover:text-copper"
                 >
@@ -54,6 +55,7 @@ export function MobileNav({ user }: { user: SessionUser }) {
               <Link
                 key={href}
                 href={href}
+                prefetch={false}
                 onClick={() => setOpen(false)}
                 className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
                   isActive(href)
@@ -76,6 +78,7 @@ export function MobileNav({ user }: { user: SessionUser }) {
             <Link
               key={href}
               href={href}
+              prefetch={false}
               className={`flex flex-1 flex-col items-center gap-0.5 py-2 text-[10px] font-medium transition-colors ${
                 active ? "text-copper" : "text-[#c9baa4]"
               }`}

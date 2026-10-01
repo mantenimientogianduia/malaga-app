@@ -69,6 +69,7 @@ export function OrdenesTable({
                     {(o.estado === "planificada" || o.estado === "en_proceso") && (
                       <Link
                         href={`/ordenes/${o.idOp}/finalizar`}
+                        prefetch={false}
                         className="whitespace-nowrap text-xs font-medium text-copper hover:text-copper-strong"
                       >
                         Finalizar

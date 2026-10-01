@@ -22,6 +22,7 @@ function ProductoRow({ p, showSlot }: { p: Producto; showSlot: boolean }) {
       <td className="px-3.5 py-2.5">
         <Link
           href={`/productos/${p.idProd}`}
+          prefetch={false}
           className="font-medium text-ink transition-colors group-hover:text-copper-strong"
         >
           {p.detalle}

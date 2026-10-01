@@ -25,6 +25,7 @@ export default async function RecetasPage() {
             <div className="flex items-baseline justify-between">
               <Link
                 href={`/productos/${r.idProd}`}
+                prefetch={false}
                 className="text-sm font-semibold text-ink transition-colors hover:text-copper-strong"
               >
                 {r.productoDetalle}
@@ -41,6 +42,7 @@ export default async function RecetasPage() {
             </ul>
             <Link
               href={`/recetas/${r.idProd}/editar`}
+              prefetch={false}
               className="mt-1 self-start text-xs font-medium text-copper hover:text-copper-strong"
             >
               Editar receta
