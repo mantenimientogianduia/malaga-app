@@ -16,22 +16,19 @@ export function NuevaOrdenForm({
   const searchParams = useSearchParams();
   const today = new Date().toISOString().slice(0, 10);
 
-  const idProdInicial = searchParams.get("idProd") ?? "";
-  const productoInicial = productos.find((p) => String(p.idProd) === idProdInicial);
-
-  const sectores = Array.from(new Set(productos.map((p) => p.sector).filter((s): s is string => !!s))).sort();
   const setIdsEnCartilla = new Set(idsEnCartilla);
+  const disponibles = productos.filter((p) => p.tipoProducto !== "PT" || setIdsEnCartilla.has(p.idProd));
+
+  const idProdInicial = searchParams.get("idProd") ?? "";
+  const productoInicial = disponibles.find((p) => String(p.idProd) === idProdInicial);
+
+  const sectores = Array.from(new Set(disponibles.map((p) => p.sector).filter((s): s is string => !!s))).sort();
 
   const [sectorSeleccionado, setSectorSeleccionado] = useState(productoInicial?.sector ?? "");
   const [idProdSeleccionado, setIdProdSeleccionado] = useState(productoInicial ? idProdInicial : "");
   const [cantPlan, setCantPlan] = useState(productoInicial?.pesoEstandar ?? "");
 
-  const productosDelSector = productos.filter((p) => p.sector === sectorSeleccionado);
-  const productoSeleccionado = productos.find((p) => String(p.idProd) === idProdSeleccionado);
-  const fueraDeCartilla =
-    !!productoSeleccionado &&
-    productoSeleccionado.tipoProducto === "PT" &&
-    !setIdsEnCartilla.has(productoSeleccionado.idProd);
+  const productosDelSector = disponibles.filter((p) => p.sector === sectorSeleccionado);
 
   function handleSectorChange(sector: string) {
     setSectorSeleccionado(sector);
@@ -41,7 +38,7 @@ export function NuevaOrdenForm({
 
   function handleProductoChange(idProd: string) {
     setIdProdSeleccionado(idProd);
-    const producto = productos.find((p) => String(p.idProd) === idProd);
+    const producto = disponibles.find((p) => String(p.idProd) === idProd);
     if (producto?.pesoEstandar) {
       setCantPlan(producto.pesoEstandar);
     }
@@ -84,13 +81,6 @@ export function NuevaOrdenForm({
           ))}
         </select>
       </label>
-
-      {fueraDeCartilla && (
-        <p className="rounded-lg bg-warn-tint px-3 py-2 text-xs font-medium text-warn">
-          Este sabor no está en la cartilla actual ni tiene un cambio programado. Podés crear la orden igual,
-          pero puede que no haga falta producirlo.
-        </p>
-      )}
 
       <label className="flex flex-col gap-1 text-sm text-ink">
         Cantidad planificada
