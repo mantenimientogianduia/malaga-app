@@ -56,9 +56,9 @@ describe("calcularFabricacion", () => {
   });
 
   it("no cuenta una bacha de más por error de punto flotante", () => {
-    // 0.9 / 0.3 = 3.0000000000000004 en punto flotante: tiene que dar 3 bachas, no 4.
+    // 2.1 / 0.7 = 3.0000000000000004 en punto flotante: tiene que dar 3 bachas, no 4.
     const f = calcularFabricacion(
-      sabor({ pesoEstandar: 0.3, demandaBaseKgDia: 0.9 }),
+      sabor({ pesoEstandar: 0.7, demandaBaseKgDia: 2.1 }),
       { kgObrador: 0, kgExhibidaPonderada: 0 },
       0
     );
@@ -161,6 +161,58 @@ describe("calcularBases", () => {
     expect(filas[0].descongelar).toBe(0);
     expect(filas[0].kgACocinar).toBe(0);
   });
+
+  it("suma los items de un mismo sabor que usan la misma base", () => {
+    const filas = calcularBases({
+      sabores: [
+        sabor({
+          items: [
+            { idSubprod: 100, cantSubprod: 2 },
+            { idSubprod: 100, cantSubprod: 1 },
+          ],
+        }),
+      ],
+      bachasMananaPorSabor: new Map([[1, 3]]),
+      bases: [base({ stockReal: 20 })],
+      margenPct: 20,
+      diasCobertura: 3,
+    });
+    // por bacha = 2 + 1 = 3; necesidad = 3 * 3 = 9; consumo = 3 * 10 * 1.2 / 4 = 9
+    expect(filas[0].necesidadFabricacion).toBeCloseTo(9, 5);
+    expect(filas[0].consumoDiario).toBeCloseTo(9, 5);
+    expect(filas[0].descongelar).toBeCloseTo(9, 5);
+  });
+
+  it("suma la necesidad y el consumo de dos sabores que comparten una base", () => {
+    const chocolate = sabor({
+      idProd: 2,
+      detalle: "Chocolate",
+      pesoEstandar: 5,
+      demandaBaseKgDia: 20,
+      items: [{ idSubprod: 100, cantSubprod: 1.5 }],
+    });
+    const filas = calcularBases({
+      sabores: [vainilla, chocolate],
+      bachasMananaPorSabor: new Map([
+        [1, 3],
+        [2, 2],
+      ]),
+      bases: [base({ stockReal: 4 })],
+      margenPct: 20,
+      diasCobertura: 3,
+    });
+    const b = filas[0];
+    // necesidad = 2 * 3 + 1.5 * 2 = 9
+    expect(b.necesidadFabricacion).toBeCloseTo(9, 5);
+    // consumo = 2 * 10 * 1.2 / 4 + 1.5 * 20 * 1.2 / 5 = 6 + 7.2 = 13.2
+    expect(b.consumoDiario).toBeCloseTo(13.2, 5);
+    expect(b.descongelar).toBeCloseTo(4, 5);
+    expect(b.faltante).toBeCloseTo(5, 5);
+    // objetivo = 39.6; a reponer = 39.6 + 5 - 0 - 0 = 44.6 (sin lotes: sin redondeo)
+    expect(b.objetivo).toBeCloseTo(39.6, 5);
+    expect(b.aReponer).toBeCloseTo(44.6, 5);
+    expect(b.kgACocinar).toBeCloseTo(44.6, 5);
+  });
 });
 
 describe("calcularCierre", () => {
@@ -209,5 +261,55 @@ describe("calcularCierre", () => {
     const r = calcularCierre({ ...entradasBase, stockSabores: {} });
     expect(r.fabricacion[0].stockDisponible).toBe(0);
     expect(r.fabricacion[0].bachas).toBe(3);
+  });
+
+  it("las bachas editadas de un sabor sin peso estándar se ignoran", () => {
+    const r = calcularCierre({
+      ...entradasBase,
+      sabores: [sabor({ pesoEstandar: null, items: [{ idSubprod: 100, cantSubprod: 2 }] })],
+      bachasOverride: { 1: 5 },
+    });
+    expect(r.fabricacion[0].sinPeso).toBe(true);
+    expect(r.fabricacion[0].bachas).toBe(0);
+    expect(r.fabricacion[0].kgAFabricar).toBe(0);
+    expect(r.bases[0].necesidadFabricacion).toBe(0);
+  });
+
+  it("editar a 0 bachas con cocciones pendientes mantiene el descongelado de las pendientes", () => {
+    const r = calcularCierre({
+      ...entradasBase,
+      sabores: [sabor({ coccionesPendientes: 4, items: [{ idSubprod: 100, cantSubprod: 2 }] })],
+      bachasOverride: { 1: 0 },
+    });
+    expect(r.fabricacion[0].bachas).toBe(0);
+    expect(r.fabricacion[0].kgAFabricar).toBe(0);
+    // bachas de mañana = 0 nuevas + 4 / 4 pendientes = 1; necesidad = 2 * 1 = 2
+    expect(r.bases[0].necesidadFabricacion).toBeCloseTo(2, 5);
+    expect(r.bases[0].descongelar).toBeCloseTo(2, 5);
+  });
+
+  it("un override de bachas negativo, no entero o no finito se ignora", () => {
+    for (const invalido of [-1, 1.5, NaN, Infinity]) {
+      const r = calcularCierre({ ...entradasBase, bachasOverride: { 1: invalido } });
+      expect(r.fabricacion[0].bachas).toBe(3);
+      expect(r.fabricacion[0].kgAFabricar).toBeCloseTo(12, 5);
+    }
+  });
+
+  it("un override de cocción en 0 deja la cocción en 0", () => {
+    const r = calcularCierre({ ...entradasBase, cocinarOverride: { 100: 0 } });
+    expect(r.bases[0].kgACocinar).toBe(0);
+  });
+
+  it("un override de cocción menor a 0.0005 se redondea a 0 (no se crearía OP)", () => {
+    const r = calcularCierre({ ...entradasBase, cocinarOverride: { 100: 0.0004 } });
+    expect(r.bases[0].kgACocinar).toBe(0);
+  });
+
+  it("un override de cocción negativo o no finito se ignora", () => {
+    for (const invalido of [-5, NaN, Infinity]) {
+      const r = calcularCierre({ ...entradasBase, cocinarOverride: { 100: invalido } });
+      expect(r.bases[0].kgACocinar).toBeCloseTo(20, 5);
+    }
   });
 });

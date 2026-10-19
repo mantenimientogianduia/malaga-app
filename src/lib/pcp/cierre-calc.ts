@@ -162,7 +162,15 @@ export function calcularCierre(e: EntradasCierre): ResultadoCierre {
       e.margenPct
     );
     const bachasEditadas = e.bachasOverride?.[s.idProd];
-    if (bachasEditadas === undefined || calculada.sinPeso) return calculada;
+    // Un override inválido (negativo, no entero, NaN) se trata como "sin override".
+    if (
+      bachasEditadas === undefined ||
+      !Number.isInteger(bachasEditadas) ||
+      bachasEditadas < 0 ||
+      calculada.sinPeso
+    ) {
+      return calculada;
+    }
     return {
       ...calculada,
       bachas: bachasEditadas,
@@ -185,7 +193,10 @@ export function calcularCierre(e: EntradasCierre): ResultadoCierre {
     diasCobertura: e.diasCobertura,
   }).map((b) => {
     const editado = e.cocinarOverride?.[b.idProd];
-    return editado === undefined ? b : { ...b, kgACocinar: editado };
+    // Un override inválido (negativo, NaN, infinito) se trata como "sin override".
+    if (editado === undefined || !Number.isFinite(editado) || editado < 0) return b;
+    // Se redondea a 3 decimales, igual que la columna cant_plan (NUMERIC(12,3)): 0.0004 -> 0.
+    return { ...b, kgACocinar: redondear3(editado) };
   });
 
   return { fabricacion, bases };
