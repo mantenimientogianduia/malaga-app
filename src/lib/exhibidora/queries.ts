@@ -119,7 +119,7 @@ export async function listPartidasEnObrador(): Promise<PartidaEnObrador[]> {
      JOIN malaga.d_productos p ON p.id_prod = ps.id_prod
      LEFT JOIN malaga.d_exhibidora e_actual ON e_actual.id_prod = ps.id_prod
      LEFT JOIN malaga.d_exhibidora e_fut ON e_fut.id_prod_fut = ps.id_prod
-     WHERE p.tipo_producto = 'PT' AND ps.ts_exhibicion IS NULL
+     WHERE p.tipo_producto = 'PT' AND ps.ts_exhibicion IS NULL AND ps.ts_baja_manual IS NULL
      ORDER BY ps.fecha_fab, ps.id_partistock`
   );
   return result.rows.map((r) => ({
