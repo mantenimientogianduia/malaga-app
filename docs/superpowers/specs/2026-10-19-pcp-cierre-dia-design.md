@@ -45,27 +45,30 @@ bachas        = kg_a_fabricar / peso_estandar
 
 - La demanda es la misma todos los días de la semana (decisión del usuario: la variación por día de la semana ya no es real). No se usa `pcp_factor_dia_semana`.
 - `cocciones_pendientes` (para PT: OPs de fabricación pendientes) = suma de `cant_plan` de OPs de ese producto en estado `planificada` o `en_proceso`, como hoy.
-- Si un sabor no tiene `peso_estandar`, no se redondea a bacha (se usa `lote_optimo`/`lote_minimo` si existen, y si no, los kg exactos) y se marca la fila.
+- Los sabores sin `peso_estandar` no se pueden planificar en bachas: aparecen en la tabla con aviso y 0 bachas (la ficha de PT exige peso estándar, pero algunos productos importados pueden no tenerlo).
 - El stock mínimo de la ficha **no se usa** en este cálculo (el margen cumple esa función).
 - Un sabor sin demanda base cargada tiene demanda 0 y se marca la fila con aviso.
 - Las bachas se pueden editar antes de confirmar.
 
 ### 3.2 Descongelar (bases)
 
-Para cada base, lo que consume el plan de fabricación, usando la misma explosión de recetas que ya existe (`cant_subprod × kg_a_fabricar` de cada sabor cuya receta activa usa esa base; a verificar en el plan que la unidad de `cant_subprod` es por kg de PT, como asume `calcularPlanManana` hoy):
+Para cada base, lo que consume el plan de fabricación, usando la explosión de recetas. `recetas_detalles.cant_subprod` es la cantidad de base de **una bacha estándar** del sabor (en la importación, factor × `peso_estandar`; al finalizar una OP se escala por `cant_real / cant_plan`). Por eso la explosión se hace **por bachas**, no por kg. (Ojo: `calcularPlanManana` actual multiplica `cant_subprod` por kg y sobreestima la base; el cierre nuevo no reutiliza esa explosión.)
 
 ```
-necesidad_fabricacion(base) = Σ sabores ( cant_subprod × kg_a_fabricar(sabor) )
+necesidad_fabricacion(base) = Σ sabores ( cant_subprod × bachas_mañana(sabor) )
+bachas_mañana(sabor)        = bachas nuevas de este cierre + (cocciones_pendientes(sabor) / peso_estandar)
 descongelar(base)           = min(necesidad_fabricacion, stock_real(base))
 faltante(base)              = max(necesidad_fabricacion − stock_real(base), 0)
 ```
+
+`bachas_mañana` incluye las OPs de fabricación ya pendientes (por ejemplo, creadas por un cierre anterior del mismo día), así que repetir el cierre da el mismo descongelado en vez de ir a cero.
 
 Si hay `faltante` se muestra un aviso rojo en la fila. Descongelar **no genera OP**: es una instrucción para el equipo, y se guarda en el cierre.
 
 ### 3.3 Cocinar (bases)
 
 ```
-consumo_diario_proyectado(base) = Σ sabores ( cant_subprod × demanda_base_kg_dia(sabor) × (1 + margen_pct/100) )
+consumo_diario_proyectado(base) = Σ sabores ( cant_subprod × demanda_base_kg_dia(sabor) × (1 + margen_pct/100) / peso_estandar(sabor) )
                                   (igual que la demanda de mañana: no hay variación por día)
 
 stock_tras_mañana(base) = stock_real − descongelar
@@ -132,6 +135,20 @@ malaga.f_cierre_dia_bacha (
   PRIMARY KEY (id_cierre, id_partistock)
 )
 
+-- Resultado por sabor
+malaga.f_cierre_dia_sabor (
+  id_cierre INTEGER NOT NULL REFERENCES malaga.f_cierre_dia(id_cierre),
+  id_prod INTEGER NOT NULL REFERENCES malaga.d_productos(id_prod),
+  demanda NUMERIC(12,3) NOT NULL,
+  stock_disponible NUMERIC(12,3) NOT NULL,
+  cocciones_pendientes NUMERIC(12,3) NOT NULL,
+  necesario NUMERIC(12,3) NOT NULL,
+  bachas INTEGER NOT NULL,
+  kg_a_fabricar NUMERIC(12,3) NOT NULL,
+  id_op_fabricar INTEGER REFERENCES malaga.f_ordenes_produccion(id_op),
+  PRIMARY KEY (id_cierre, id_prod)
+)
+
 -- Stock de bases y resultado por base
 malaga.f_cierre_dia_base (
   id_cierre INTEGER NOT NULL REFERENCES malaga.f_cierre_dia(id_cierre),
@@ -141,6 +158,7 @@ malaga.f_cierre_dia_base (
   descongelar NUMERIC(12,3) NOT NULL,
   faltante NUMERIC(12,3) NOT NULL,
   cocinar NUMERIC(12,3) NOT NULL,
+  id_op_cocinar INTEGER REFERENCES malaga.f_ordenes_produccion(id_op),
   PRIMARY KEY (id_cierre, id_prod)
 )
 ```
@@ -152,7 +170,12 @@ malaga.f_cierre_dia_base (
 
 ## 6. Pantalla "Plan del día"
 
-Vista de solo lectura del último cierre confirmado cuyo `fecha_plan` es hoy, con las tres listas (fabricar, descongelar, cocinar). Es lo que mira el equipo a la mañana siguiente, incluido el descongelado, que no tiene OP.
+Vista de solo lectura para el equipo a la mañana siguiente, con las tres listas:
+- **Fabricar:** las OPs de fabricación (PT) con `fecha_plan` = hoy que no estén canceladas.
+- **Cocinar:** las OPs de cocción (SEMI) con `fecha_plan` = hoy que no estén canceladas.
+- **Descongelar:** las bases con `descongelar` > 0 (o con faltante) del último cierre cuyo `fecha_plan` es hoy. No genera OP.
+
+"Hoy" y "mañana" se calculan en la zona horaria de Málaga (`Europe/Madrid`), no en la del servidor.
 
 ## 7. Casos borde
 
