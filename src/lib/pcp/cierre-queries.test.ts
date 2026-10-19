@@ -12,6 +12,8 @@ import {
   listBachasExhibidas,
   getStockTeoricoBases,
   getDatosCierre,
+  confirmarCierre,
+  type ConfirmarCierreInput,
 } from "./cierre-queries";
 
 // malaga.usuarios NO se trunca nunca: es la tabla real de cuentas. Se borra solo la
@@ -471,4 +473,224 @@ describe("cierre queries — datos del cierre", () => {
     expect(datos.sabores).toEqual([]);
     expect(datos.bachasObrador.map((b) => b.idPartida)).toEqual([idPartida]);
   });
+});
+
+// Cada escenario crea varias filas seguidas contra la base remota: supera los 5 s por defecto de vitest.
+const TIMEOUT_ESCENARIO = 30000;
+
+async function escenarioBasico() {
+  const userId = await seedUser();
+  const pt = await createProducto({ detalle: "Vainilla", unidMed: "kg", tipoProducto: "PT", pesoEstandar: 4 });
+  const semi = await createProducto({ detalle: "Base Media", unidMed: "kg", tipoProducto: "SEMI" });
+  await query(`UPDATE malaga.d_productos SET lote_optimo = 10, lote_minimo = 20 WHERE id_prod = $1`, [semi.idProd]);
+  await createReceta({ idProd: pt.idProd, items: [{ idSubprod: semi.idProd, cantSubprod: 2 }], userAlta: userId });
+  const exhib = await query<{ id_exhibidora: number }>(
+    `INSERT INTO malaga.d_exhibidora (nro, id_prod) VALUES (1, $1) RETURNING id_exhibidora`,
+    [pt.idProd]
+  );
+  await setDemandaBase(pt.idProd, 10);
+  const exhibida = await crearPartidaPt(pt.idProd, 4, "EXH");
+  await exhibir(exhibida, exhib.rows[0].id_exhibidora, userId);
+  const obrador = await crearPartidaPt(pt.idProd, 4, "OBR");
+  return { userId, pt, semi, exhibida, obrador };
+}
+
+function entradaCierre(
+  e: Awaited<ReturnType<typeof escenarioBasico>>,
+  parcial: Partial<ConfirmarCierreInput> = {}
+): ConfirmarCierreInput {
+  return {
+    fecha: "2030-01-01",
+    fechaPlan: "2030-01-02",
+    userCierre: e.userId,
+    ausentes: [],
+    pctBachas: [{ idPartida: e.exhibida, pct: 50 }],
+    stockReal: { [e.semi.idProd]: 3 },
+    bachasOverride: {},
+    cocinarOverride: {},
+    ...parcial,
+  };
+}
+
+describe("cierre queries — confirmar cierre", () => {
+  beforeEach(limpiar);
+  afterEach(limpiar);
+
+  it("crea las OPs de fabricación y de cocción y guarda el cierre completo", async () => {
+    const e = await escenarioBasico();
+
+    const r = await confirmarCierre(entradaCierre(e));
+
+    // demanda 12; stock = 4 (obrador) + 2 (50% de 4) = 6; necesario 6 -> 2 bachas = 8 kg
+    // base: necesidad 2*2 = 4; real 3 -> descongelar 3, faltante 1; consumo diario 2*10*1.2/4 = 6;
+    // objetivo 18; a reponer 18 + 1 - 0 = 19 -> 2 lotes de 10 = 20
+    expect(r.opsFabricacion).toHaveLength(1);
+    expect(r.opsCoccion).toHaveLength(1);
+
+    const opPt = await query<{ cant_plan: string; fecha_plan: string; estado: string }>(
+      `SELECT cant_plan, fecha_plan::text, estado FROM malaga.f_ordenes_produccion WHERE id_op = $1`,
+      [r.opsFabricacion[0]]
+    );
+    expect(Number(opPt.rows[0].cant_plan)).toBe(8);
+    expect(opPt.rows[0].fecha_plan).toBe("2030-01-02");
+    expect(opPt.rows[0].estado).toBe("planificada");
+
+    const opSemi = await query<{ cant_plan: string }>(
+      `SELECT cant_plan FROM malaga.f_ordenes_produccion WHERE id_op = $1`,
+      [r.opsCoccion[0]]
+    );
+    expect(Number(opSemi.rows[0].cant_plan)).toBe(20);
+
+    const cierre = await query<{ fecha_plan: string; margen_pct: string; dias_cobertura: string }>(
+      `SELECT fecha_plan::text, margen_pct, dias_cobertura FROM malaga.f_cierre_dia WHERE id_cierre = $1`,
+      [r.idCierre]
+    );
+    expect(cierre.rows[0].fecha_plan).toBe("2030-01-02");
+    expect(Number(cierre.rows[0].margen_pct)).toBe(20);
+
+    const bacha = await query<{ pct: number }>(
+      `SELECT pct FROM malaga.f_cierre_dia_bacha WHERE id_cierre = $1 AND id_partistock = $2`,
+      [r.idCierre, e.exhibida]
+    );
+    expect(bacha.rows[0].pct).toBe(50);
+
+    const sabor = await query<{ bachas: number; kg_a_fabricar: string; id_op_fabricar: number }>(
+      `SELECT bachas, kg_a_fabricar, id_op_fabricar FROM malaga.f_cierre_dia_sabor WHERE id_cierre = $1`,
+      [r.idCierre]
+    );
+    expect(sabor.rows[0].bachas).toBe(2);
+    expect(Number(sabor.rows[0].kg_a_fabricar)).toBe(8);
+    expect(sabor.rows[0].id_op_fabricar).toBe(r.opsFabricacion[0]);
+
+    const base = await query<{
+      stock_teorico: string;
+      stock_real: string;
+      descongelar: string;
+      faltante: string;
+      cocinar: string;
+      id_op_cocinar: number;
+    }>(
+      `SELECT stock_teorico, stock_real, descongelar, faltante, cocinar, id_op_cocinar
+       FROM malaga.f_cierre_dia_base WHERE id_cierre = $1`,
+      [r.idCierre]
+    );
+    expect(Number(base.rows[0].stock_teorico)).toBe(0);
+    expect(Number(base.rows[0].stock_real)).toBe(3);
+    expect(Number(base.rows[0].descongelar)).toBe(3);
+    expect(Number(base.rows[0].faltante)).toBe(1);
+    expect(Number(base.rows[0].cocinar)).toBe(20);
+    expect(base.rows[0].id_op_cocinar).toBe(r.opsCoccion[0]);
+
+    const snapshot = await query(`SELECT 1 FROM malaga.f_pcp_pronostico WHERE fecha_plan = '2030-01-02'`);
+    expect(snapshot.rows).toHaveLength(2); // una fila por el sabor y otra por la base
+  }, TIMEOUT_ESCENARIO);
+
+  it("las bachas del obrador destildadas quedan con baja por ajuste y no cuentan como stock", async () => {
+    const e = await escenarioBasico();
+
+    const r = await confirmarCierre(entradaCierre(e, { ausentes: [e.obrador] }));
+
+    const baja = await query<{ motivo_baja_manual: string; user_baja_manual: number }>(
+      `SELECT motivo_baja_manual, user_baja_manual FROM malaga.f_partidas_stock WHERE id_partistock = $1`,
+      [e.obrador]
+    );
+    expect(baja.rows[0].motivo_baja_manual).toBe("ajuste");
+    expect(baja.rows[0].user_baja_manual).toBe(e.userId);
+
+    // stock = 2 (solo 50% de la exhibida); necesario 10 -> 3 bachas = 12 kg
+    const op = await query<{ cant_plan: string }>(
+      `SELECT cant_plan FROM malaga.f_ordenes_produccion WHERE id_op = $1`,
+      [r.opsFabricacion[0]]
+    );
+    expect(Number(op.rows[0].cant_plan)).toBe(12);
+  }, TIMEOUT_ESCENARIO);
+
+  it("repetir el cierre el mismo día no duplica OPs y mantiene el descongelado", async () => {
+    const e = await escenarioBasico();
+    await confirmarCierre(entradaCierre(e));
+
+    const segundo = await confirmarCierre(entradaCierre(e));
+
+    expect(segundo.opsFabricacion).toHaveLength(0);
+    expect(segundo.opsCoccion).toHaveLength(0);
+    const base = await query<{ descongelar: string; faltante: string }>(
+      `SELECT descongelar, faltante FROM malaga.f_cierre_dia_base WHERE id_cierre = $1`,
+      [segundo.idCierre]
+    );
+    expect(Number(base.rows[0].descongelar)).toBe(3);
+    expect(Number(base.rows[0].faltante)).toBe(1);
+    const total = await query<{ c: string }>(`SELECT count(*) AS c FROM malaga.f_ordenes_produccion`);
+    expect(Number(total.rows[0].c)).toBe(2);
+  }, TIMEOUT_ESCENARIO);
+
+  it("usa las bachas y la cocción editadas a mano", async () => {
+    const e = await escenarioBasico();
+
+    const r = await confirmarCierre(
+      entradaCierre(e, { bachasOverride: { [e.pt.idProd]: 1 }, cocinarOverride: { [e.semi.idProd]: 30 } })
+    );
+
+    const opPt = await query<{ cant_plan: string }>(
+      `SELECT cant_plan FROM malaga.f_ordenes_produccion WHERE id_op = $1`,
+      [r.opsFabricacion[0]]
+    );
+    expect(Number(opPt.rows[0].cant_plan)).toBe(4);
+    const opSemi = await query<{ cant_plan: string }>(
+      `SELECT cant_plan FROM malaga.f_ordenes_produccion WHERE id_op = $1`,
+      [r.opsCoccion[0]]
+    );
+    expect(Number(opSemi.rows[0].cant_plan)).toBe(30);
+  }, TIMEOUT_ESCENARIO);
+
+  it("rechaza el cierre si falta el % de una bacha exhibida", async () => {
+    const e = await escenarioBasico();
+    await expect(confirmarCierre(entradaCierre(e, { pctBachas: [] }))).rejects.toThrow(
+      "Falta indicar el % de todas las bachas exhibidas."
+    );
+  }, TIMEOUT_ESCENARIO);
+
+  it("rechaza el cierre si falta el stock real de una base", async () => {
+    const e = await escenarioBasico();
+    await expect(confirmarCierre(entradaCierre(e, { stockReal: {} }))).rejects.toThrow(
+      "Falta cargar el stock real de todas las bases."
+    );
+  }, TIMEOUT_ESCENARIO);
+
+  it("rechaza porcentajes fuera de 0, 25, 50, 75 y 100", async () => {
+    const e = await escenarioBasico();
+    await expect(
+      confirmarCierre(entradaCierre(e, { pctBachas: [{ idPartida: e.exhibida, pct: 30 }] }))
+    ).rejects.toThrow("El % de cada bacha debe ser 0, 25, 50, 75 o 100.");
+  }, TIMEOUT_ESCENARIO);
+
+  it("no deja ningún cambio si algo falla a mitad del cierre", async () => {
+    const e = await escenarioBasico();
+    await expect(confirmarCierre(entradaCierre(e, { pctBachas: [] }))).rejects.toThrow();
+    const cierres = await query<{ c: string }>(`SELECT count(*) AS c FROM malaga.f_cierre_dia`);
+    const ops = await query<{ c: string }>(`SELECT count(*) AS c FROM malaga.f_ordenes_produccion`);
+    expect(Number(cierres.rows[0].c)).toBe(0);
+    expect(Number(ops.rows[0].c)).toBe(0);
+  }, TIMEOUT_ESCENARIO);
+
+  it("hace rollback de todo si falla DENTRO de la transaccion (despues de dar de baja una bacha)", async () => {
+    const e = await escenarioBasico();
+
+    // La fecha inválida pasa las validaciones y falla en el INSERT de f_cierre_dia, ya dentro de la
+    // transacción y después del UPDATE que da de baja la bacha ausente.
+    await expect(
+      confirmarCierre(entradaCierre(e, { ausentes: [e.obrador], fechaPlan: "no-es-fecha" }))
+    ).rejects.toThrow();
+
+    const bacha = await query<{ ts_baja_manual: string | null; motivo_baja_manual: string | null; user_baja_manual: number | null }>(
+      `SELECT ts_baja_manual, motivo_baja_manual, user_baja_manual FROM malaga.f_partidas_stock WHERE id_partistock = $1`,
+      [e.obrador]
+    );
+    expect(bacha.rows[0].ts_baja_manual).toBeNull();
+    expect(bacha.rows[0].motivo_baja_manual).toBeNull();
+    expect(bacha.rows[0].user_baja_manual).toBeNull();
+    for (const tabla of ["f_cierre_dia", "f_cierre_dia_bacha", "f_cierre_dia_sabor", "f_cierre_dia_base", "f_pcp_pronostico", "f_ordenes_produccion"]) {
+      const r = await query<{ c: string }>(`SELECT count(*) AS c FROM malaga.${tabla}`);
+      expect(Number(r.rows[0].c), tabla).toBe(0);
+    }
+  }, TIMEOUT_ESCENARIO);
 });

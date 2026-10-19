@@ -1,9 +1,10 @@
-import { query } from "../db";
+import type { PoolClient } from "pg";
+import { query, withTransaction } from "../db";
 import {
   getCoccionesPendientesPorProducto,
   getItemsRecetaSemiPorProducto,
 } from "./queries";
-import type { SaborCierre } from "./cierre-calc";
+import { calcularCierre, type SaborCierre, type StockSabor } from "./cierre-calc";
 
 export interface ConfigPcp {
   margenPct: number;
@@ -261,4 +262,166 @@ export async function getDatosCierre(): Promise<DatosCierre> {
     bachasExhibidas,
     bases: bases.map((b) => ({ ...b, coccionesPendientes: pendientes.get(b.idProd) ?? 0 })),
   };
+}
+
+export interface ConfirmarCierreInput {
+  fecha: string;
+  fechaPlan: string;
+  userCierre: number;
+  // Bachas del obrador que el usuario destildó (no están físicamente).
+  ausentes: number[];
+  pctBachas: { idPartida: number; pct: number }[];
+  stockReal: Record<number, number>;
+  bachasOverride: Record<number, number>;
+  cocinarOverride: Record<number, number>;
+}
+
+export interface ResultadoConfirmacion {
+  idCierre: number;
+  opsFabricacion: number[];
+  opsCoccion: number[];
+}
+
+const PORCENTAJES_VALIDOS = [0, 25, 50, 75, 100];
+
+async function crearOpPlanificada(
+  client: PoolClient,
+  idProd: number,
+  cantidad: number,
+  fechaPlan: string
+): Promise<number> {
+  // Misma lógica que createOrdenProduccion (src/lib/ordenes/queries.ts), pero con el client de
+  // esta transacción. Una OP sin receta activa se crea igual (al finalizarla no hay ingredientes).
+  const receta = await client.query<{ id_receta: number }>(
+    `SELECT id_receta FROM malaga.recetas WHERE id_prod = $1 AND activa = true`,
+    [idProd]
+  );
+  const op = await client.query<{ id_op: number }>(
+    `INSERT INTO malaga.f_ordenes_produccion (id_prod, id_receta, cant_plan, fecha_plan, estado)
+     VALUES ($1, $2, $3, $4, 'planificada') RETURNING id_op`,
+    [idProd, receta.rows[0]?.id_receta ?? null, cantidad, fechaPlan]
+  );
+  return op.rows[0].id_op;
+}
+
+export async function confirmarCierre(input: ConfirmarCierreInput): Promise<ResultadoConfirmacion> {
+  const datos = await getDatosCierre();
+
+  const pctPorPartida = new Map(input.pctBachas.map((p) => [p.idPartida, p.pct]));
+  if (datos.bachasExhibidas.some((b) => !pctPorPartida.has(b.idPartida))) {
+    throw new Error("Falta indicar el % de todas las bachas exhibidas.");
+  }
+  if (input.pctBachas.some((p) => !PORCENTAJES_VALIDOS.includes(p.pct))) {
+    throw new Error("El % de cada bacha debe ser 0, 25, 50, 75 o 100.");
+  }
+  if (datos.bases.some((b) => input.stockReal[b.idProd] === undefined)) {
+    throw new Error("Falta cargar el stock real de todas las bases.");
+  }
+  if (Object.values(input.stockReal).some((v) => !Number.isFinite(v) || v < 0)) {
+    throw new Error("El stock real de cada base debe ser un número mayor o igual a 0.");
+  }
+  if (Object.values(input.bachasOverride).some((v) => !Number.isInteger(v) || v < 0)) {
+    throw new Error("Las bachas deben ser un número entero mayor o igual a 0.");
+  }
+  if (Object.values(input.cocinarOverride).some((v) => !Number.isFinite(v) || v < 0)) {
+    throw new Error("Los kg a cocinar deben ser un número mayor o igual a 0.");
+  }
+
+  const idsObrador = new Set(datos.bachasObrador.map((b) => b.idPartida));
+  const ausentes = new Set(input.ausentes.filter((id) => idsObrador.has(id)));
+
+  const stockSabores: Record<number, StockSabor> = {};
+  const stockDe = (idProd: number): StockSabor =>
+    (stockSabores[idProd] ??= { kgObrador: 0, kgExhibidaPonderada: 0 });
+  for (const b of datos.bachasObrador) {
+    if (!ausentes.has(b.idPartida)) stockDe(b.idProd).kgObrador += b.cantidad;
+  }
+  for (const b of datos.bachasExhibidas) {
+    stockDe(b.idProd).kgExhibidaPonderada += (b.cantidad * (pctPorPartida.get(b.idPartida) as number)) / 100;
+  }
+
+  const resultado = calcularCierre({
+    margenPct: datos.margenPct,
+    diasCobertura: datos.diasCobertura,
+    sabores: datos.sabores,
+    stockSabores,
+    bases: datos.bases.map((b) => ({
+      idProd: b.idProd,
+      detalle: b.detalle,
+      stockReal: input.stockReal[b.idProd],
+      coccionesPendientes: b.coccionesPendientes,
+      loteOptimo: b.loteOptimo,
+      loteMinimo: b.loteMinimo,
+    })),
+    bachasOverride: input.bachasOverride,
+    cocinarOverride: input.cocinarOverride,
+  });
+  const teoricoPorBase = new Map(datos.bases.map((b) => [b.idProd, b.stockTeorico]));
+
+  return withTransaction(async (client) => {
+    if (ausentes.size > 0) {
+      await client.query(
+        `UPDATE malaga.f_partidas_stock
+         SET ts_baja_manual = now(), motivo_baja_manual = 'ajuste', user_baja_manual = $2
+         WHERE id_partistock = ANY($1::int[]) AND ts_exhibicion IS NULL AND ts_baja_manual IS NULL`,
+        [Array.from(ausentes), input.userCierre]
+      );
+    }
+
+    const cierre = await client.query<{ id_cierre: number }>(
+      `INSERT INTO malaga.f_cierre_dia (fecha, fecha_plan, user_cierre, margen_pct, dias_cobertura)
+       VALUES ($1, $2, $3, $4, $5) RETURNING id_cierre`,
+      [input.fecha, input.fechaPlan, input.userCierre, datos.margenPct, datos.diasCobertura]
+    );
+    const idCierre = cierre.rows[0].id_cierre;
+
+    for (const b of datos.bachasExhibidas) {
+      await client.query(
+        `INSERT INTO malaga.f_cierre_dia_bacha (id_cierre, id_partistock, pct) VALUES ($1, $2, $3)`,
+        [idCierre, b.idPartida, pctPorPartida.get(b.idPartida)]
+      );
+    }
+
+    const opsFabricacion: number[] = [];
+    for (const f of resultado.fabricacion) {
+      const idOp = f.kgAFabricar > 0 ? await crearOpPlanificada(client, f.idProd, f.kgAFabricar, input.fechaPlan) : null;
+      if (idOp !== null) opsFabricacion.push(idOp);
+
+      await client.query(
+        `INSERT INTO malaga.f_cierre_dia_sabor
+           (id_cierre, id_prod, demanda, stock_disponible, cocciones_pendientes, necesario, bachas, kg_a_fabricar, id_op_fabricar)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [idCierre, f.idProd, f.demandaManana, f.stockDisponible, f.coccionesPendientes, f.necesario, f.bachas, f.kgAFabricar, idOp]
+      );
+      await client.query(
+        `INSERT INTO malaga.f_pcp_pronostico
+           (fecha_plan, id_prod, demanda_pronosticada, stock_actual_momento, stock_minimo_momento,
+            cocciones_pendientes_momento, necesario, cantidad_planificada, id_op_generada, user_generado)
+         VALUES ($1, $2, $3, $4, 0, $5, $6, $7, $8, $9)`,
+        [input.fechaPlan, f.idProd, f.demandaManana, f.stockDisponible, f.coccionesPendientes, f.necesario, f.kgAFabricar, idOp, input.userCierre]
+      );
+    }
+
+    const opsCoccion: number[] = [];
+    for (const b of resultado.bases) {
+      const idOp = b.kgACocinar > 0 ? await crearOpPlanificada(client, b.idProd, b.kgACocinar, input.fechaPlan) : null;
+      if (idOp !== null) opsCoccion.push(idOp);
+
+      await client.query(
+        `INSERT INTO malaga.f_cierre_dia_base
+           (id_cierre, id_prod, stock_teorico, stock_real, descongelar, faltante, cocinar, id_op_cocinar)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        [idCierre, b.idProd, teoricoPorBase.get(b.idProd) ?? 0, b.stockReal, b.descongelar, b.faltante, b.kgACocinar, idOp]
+      );
+      await client.query(
+        `INSERT INTO malaga.f_pcp_pronostico
+           (fecha_plan, id_prod, demanda_pronosticada, stock_actual_momento, stock_minimo_momento,
+            cocciones_pendientes_momento, necesario, cantidad_planificada, id_op_generada, user_generado)
+         VALUES ($1, $2, $3, $4, 0, $5, $6, $7, $8, $9)`,
+        [input.fechaPlan, b.idProd, b.necesidadFabricacion, b.stockReal, b.coccionesPendientes, b.aReponer, b.kgACocinar, idOp, input.userCierre]
+      );
+    }
+
+    return { idCierre, opsFabricacion, opsCoccion };
+  });
 }
