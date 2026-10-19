@@ -28,13 +28,19 @@ export async function updateConfigPcp(margenPct: number, diasCobertura: number):
 export interface DemandaBaseFila {
   idProd: number;
   detalle: string;
+  pesoEstandar: number | null;
   kgDia: number;
 }
 
 // Sabores en cartilla o programados a entrar, con sus kg/día (0 si todavía no se cargó).
 export async function listDemandaBase(): Promise<DemandaBaseFila[]> {
-  const result = await query<{ id_prod: number; detalle: string; kg_dia: string }>(
-    `SELECT p.id_prod, p.detalle, COALESCE(d.kg_dia, 0) AS kg_dia
+  const result = await query<{
+    id_prod: number;
+    detalle: string;
+    peso_estandar: string | null;
+    kg_dia: string;
+  }>(
+    `SELECT p.id_prod, p.detalle, p.peso_estandar, COALESCE(d.kg_dia, 0) AS kg_dia
      FROM malaga.d_productos p
      LEFT JOIN malaga.pcp_demanda_base d ON d.id_prod = p.id_prod
      WHERE p.id_prod IN (
@@ -44,7 +50,12 @@ export async function listDemandaBase(): Promise<DemandaBaseFila[]> {
      )
      ORDER BY p.detalle`
   );
-  return result.rows.map((r) => ({ idProd: r.id_prod, detalle: r.detalle, kgDia: Number(r.kg_dia) }));
+  return result.rows.map((r) => ({
+    idProd: r.id_prod,
+    detalle: r.detalle,
+    pesoEstandar: r.peso_estandar === null ? null : Number(r.peso_estandar),
+    kgDia: Number(r.kg_dia),
+  }));
 }
 
 export async function setDemandaBase(idProd: number, kgDia: number): Promise<void> {
@@ -97,6 +108,9 @@ export interface BachaExhibida {
 }
 
 // La bacha actualmente exhibida en cada posición (la última partida exhibida del slot).
+// Equivale a v_stock_pt_vivo pero sin la subconsulta correlacionada de la vista, que es cuadrática
+// en la cantidad de partidas. El filtro PT se aplica después de elegir la última partida del slot,
+// igual que la vista (si la última exhibida no es PT, el slot no se informa).
 export async function listBachasExhibidas(): Promise<BachaExhibida[]> {
   const result = await query<{
     id_partistock: number;
@@ -106,11 +120,18 @@ export async function listBachasExhibidas(): Promise<BachaExhibida[]> {
     cantidad: string;
     nro: number;
   }>(
-    `SELECT v.id_partistock, v.id_prod, p.detalle, v.lote, v.cantidad, e.nro
-     FROM malaga.v_stock_pt_vivo v
-     JOIN malaga.d_productos p ON p.id_prod = v.id_prod
-     JOIN malaga.d_exhibidora e ON e.id_exhibidora = v.id_exhibidora
-     ORDER BY e.nro`
+    `SELECT t.id_partistock, t.id_prod, t.detalle, t.lote, t.cantidad, t.nro
+     FROM (
+       SELECT DISTINCT ON (ps.id_exhibidora)
+         ps.id_partistock, ps.id_prod, p.detalle, p.tipo_producto, ps.lote, ps.cantidad, e.nro
+       FROM malaga.f_partidas_stock ps
+       JOIN malaga.d_productos p ON p.id_prod = ps.id_prod
+       JOIN malaga.d_exhibidora e ON e.id_exhibidora = ps.id_exhibidora
+       WHERE ps.ts_exhibicion IS NOT NULL
+       ORDER BY ps.id_exhibidora, ps.ts_exhibicion DESC, ps.id_partistock DESC
+     ) t
+     WHERE t.tipo_producto = 'PT'
+     ORDER BY t.nro`
   );
   return result.rows.map((r) => ({
     idPartida: r.id_partistock,
@@ -132,7 +153,11 @@ export interface BaseTeorica {
 
 // Stock teórico de cada base activa (SEMI).
 // Con cierre previo: real del último cierre + producido - consumido - bajas desde entonces.
-// Sin cierre previo: suma del restante por lotes (v_stock_semi_vivo).
+// Sin cierre previo: suma del restante por lotes (v_stock_semi_vivo). Esa vista descuenta el consumo
+// solo por lote, así que en el primer cierre los consumos sin lote elegido no se restan y el teórico
+// puede salir inflado; se corrige solo con el primer stock real.
+// El producido se mide con el momento en que terminó la OP de cocción (ts_fin) y, si la partida no
+// tiene OP, con ts_ingreso. El desfase del reloj del dispositivo del usuario queda fuera de alcance.
 // El consumo se toma de f_trazabilidad_op por base (id_subprod) y no por lote, porque
 // una OP puede finalizarse sin haber elegido el lote consumido.
 export async function getStockTeoricoBases(): Promise<BaseTeorica[]> {
@@ -156,7 +181,8 @@ export async function getStockTeoricoBases(): Promise<BaseTeorica[]> {
          u.stock_real
          + COALESCE((
              SELECT SUM(ps.cantidad) FROM malaga.f_partidas_stock ps
-             WHERE ps.id_prod = p.id_prod AND ps.ts_ingreso > u.ts_cierre
+             LEFT JOIN malaga.f_ordenes_produccion op ON op.id_op = ps.id_op_origen
+             WHERE ps.id_prod = p.id_prod AND COALESCE(op.ts_fin, ps.ts_ingreso) > u.ts_cierre
            ), 0)
          - COALESCE((
              SELECT SUM(t.cant_subprod)
@@ -205,28 +231,20 @@ export interface DatosCierre {
 
 // Todo lo que necesita la pantalla de cierre. Es serializable (se pasa a un componente cliente).
 export async function getDatosCierre(): Promise<DatosCierre> {
-  const config = await getConfigPcp();
-  const demanda = await listDemandaBase();
-  const idsSabores = demanda.map((d) => d.idProd);
-
-  const pesosResult = await query<{ id_prod: number; peso_estandar: string | null }>(
-    `SELECT id_prod, peso_estandar FROM malaga.d_productos WHERE id_prod = ANY($1::int[])`,
-    [idsSabores]
-  );
-  const pesos = new Map(
-    pesosResult.rows.map((r) => [r.id_prod, r.peso_estandar === null ? null : Number(r.peso_estandar)])
-  );
-
-  const itemsPorSabor = await getItemsRecetaSemiPorProducto(idsSabores);
-  const pendientes = await getCoccionesPendientesPorProducto();
-  const bachasObrador = await listBachasObrador();
-  const bachasExhibidas = await listBachasExhibidas();
-  const bases = await getStockTeoricoBases();
+  const [config, demanda, pendientes, bachasObrador, bachasExhibidas, bases] = await Promise.all([
+    getConfigPcp(),
+    listDemandaBase(),
+    getCoccionesPendientesPorProducto(),
+    listBachasObrador(),
+    listBachasExhibidas(),
+    getStockTeoricoBases(),
+  ]);
+  const itemsPorSabor = await getItemsRecetaSemiPorProducto(demanda.map((d) => d.idProd));
 
   const sabores: SaborCierre[] = demanda.map((d) => ({
     idProd: d.idProd,
     detalle: d.detalle,
-    pesoEstandar: pesos.get(d.idProd) ?? null,
+    pesoEstandar: d.pesoEstandar,
     demandaBaseKgDia: d.kgDia,
     coccionesPendientes: pendientes.get(d.idProd) ?? 0,
     items: (itemsPorSabor.get(d.idProd) ?? []).map((i) => ({

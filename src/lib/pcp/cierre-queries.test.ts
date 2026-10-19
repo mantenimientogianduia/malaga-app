@@ -87,6 +87,32 @@ async function crearPartidaPt(idProd: number, cantidad: number, lote: string) {
   return r.rows[0].id_partistock;
 }
 
+async function crearCierre(userId: number, diasAtras: number) {
+  const r = await query<{ id_cierre: number }>(
+    `INSERT INTO malaga.f_cierre_dia (fecha, fecha_plan, ts_cierre, user_cierre, margen_pct, dias_cobertura)
+     VALUES (CURRENT_DATE - $2::int, CURRENT_DATE - $2::int + 1, now() - ($2::int * interval '1 day'), $1, 20, 3)
+     RETURNING id_cierre`,
+    [userId, diasAtras]
+  );
+  return r.rows[0].id_cierre;
+}
+
+async function cierreBase(idCierre: number, idProd: number, stockReal: number) {
+  await query(
+    `INSERT INTO malaga.f_cierre_dia_base (id_cierre, id_prod, stock_teorico, stock_real, descongelar, faltante, cocinar)
+     VALUES ($1, $2, 0, $3, 0, 0, 0)`,
+    [idCierre, idProd, stockReal]
+  );
+}
+
+async function crearPartidaSemi(idProd: number, cantidad: number, lote: string, tsIngreso: string) {
+  await query(
+    `INSERT INTO malaga.f_partidas_stock (id_prod, cantidad, fecha_fab, lote, ts_ingreso)
+     VALUES ($1, $2, CURRENT_DATE, $3, ${tsIngreso})`,
+    [idProd, cantidad, lote]
+  );
+}
+
 async function exhibir(idPartida: number, idExhibidora: number, idUser: number, tsExhibicion = "now()") {
   await query(
     `UPDATE malaga.f_partidas_stock
@@ -256,5 +282,193 @@ describe("cierre queries — datos del cierre", () => {
       loteOptimo: 10,
       loteMinimo: 20,
     });
+  });
+
+  it("listBachasExhibidas devuelve una fila por posición aunque dos posiciones tengan el mismo sabor", async () => {
+    const p = await createProducto({ detalle: "Vainilla", unidMed: "kg", tipoProducto: "PT", pesoEstandar: 4 });
+    const userId = await seedUser();
+    const e2 = await query<{ id_exhibidora: number }>(
+      `INSERT INTO malaga.d_exhibidora (nro, id_prod) VALUES (2, $1) RETURNING id_exhibidora`,
+      [p.idProd]
+    );
+    const e1 = await query<{ id_exhibidora: number }>(
+      `INSERT INTO malaga.d_exhibidora (nro, id_prod) VALUES (1, $1) RETURNING id_exhibidora`,
+      [p.idProd]
+    );
+    const a = await crearPartidaPt(p.idProd, 4, "L1");
+    const b = await crearPartidaPt(p.idProd, 3, "L2");
+    await exhibir(a, e1.rows[0].id_exhibidora, userId);
+    await exhibir(b, e2.rows[0].id_exhibidora, userId);
+
+    const bachas = await listBachasExhibidas();
+    expect(bachas.map((x) => [x.nroPosicion, x.idPartida, x.cantidad])).toEqual([
+      [1, a, 4],
+      [2, b, 3],
+    ]);
+  });
+
+  it("getStockTeoricoBases excluye las bases inactivas", async () => {
+    const activa = await createProducto({ detalle: "Base Activa", unidMed: "kg", tipoProducto: "SEMI" });
+    const inactiva = await createProducto({ detalle: "Base Inactiva", unidMed: "kg", tipoProducto: "SEMI" });
+    await query(`UPDATE malaga.d_productos SET activo = false WHERE id_prod = $1`, [inactiva.idProd]);
+
+    const ids = (await getStockTeoricoBases()).map((b) => b.idProd);
+    expect(ids).toContain(activa.idProd);
+    expect(ids).not.toContain(inactiva.idProd);
+  });
+
+  it("getStockTeoricoBases con varios cierres parte del último", async () => {
+    const userId = await seedUser();
+    const semi = await createProducto({ detalle: "Base Media", unidMed: "kg", tipoProducto: "SEMI" });
+    const c1 = await crearCierre(userId, 5);
+    const c2 = await crearCierre(userId, 2);
+    await cierreBase(c1, semi.idProd, 100);
+    await cierreBase(c2, semi.idProd, 40);
+    // Entre los dos cierres: no debe sumar (ya está dentro del real del último cierre).
+    await crearPartidaSemi(semi.idProd, 9, "ENTRE", "now() - interval '3 days'");
+    // Después del último cierre: suma.
+    await crearPartidaSemi(semi.idProd, 5, "DESPUES", "now() - interval '1 day'");
+
+    const fila = (await getStockTeoricoBases()).find((b) => b.idProd === semi.idProd)!;
+    expect(fila.stockTeorico).toBe(45); // 40 + 5
+  });
+
+  it("getStockTeoricoBases combina una base con cierre y otra sin cierre", async () => {
+    const userId = await seedUser();
+    const conCierre = await createProducto({ detalle: "Base A", unidMed: "kg", tipoProducto: "SEMI" });
+    const sinCierre = await createProducto({ detalle: "Base B", unidMed: "kg", tipoProducto: "SEMI" });
+    const c = await crearCierre(userId, 2);
+    await cierreBase(c, conCierre.idProd, 10);
+    await crearPartidaSemi(conCierre.idProd, 4, "A1", "now()");
+    await crearPartidaSemi(sinCierre.idProd, 6, "B1", "now() - interval '10 days'");
+    await crearPartidaSemi(sinCierre.idProd, 1, "B2", "now()");
+
+    const bases = await getStockTeoricoBases();
+    expect(bases.find((b) => b.idProd === conCierre.idProd)!.stockTeorico).toBe(14); // 10 + 4
+    expect(bases.find((b) => b.idProd === sinCierre.idProd)!.stockTeorico).toBe(7); // 6 + 1
+  });
+
+  it("getStockTeoricoBases: la baja de un lote con consumo asignado descuenta solo lo que quedaba", async () => {
+    const userId = await seedUser();
+    const pt = await createProducto({ detalle: "Vainilla", unidMed: "kg", tipoProducto: "PT", pesoEstandar: 4 });
+    const semi = await createProducto({ detalle: "Base Media", unidMed: "kg", tipoProducto: "SEMI" });
+    await createReceta({ idProd: pt.idProd, items: [{ idSubprod: semi.idProd, cantSubprod: 2 }], userAlta: userId });
+    const receta = await query<{ id_receta: number; id_det_receta: number }>(
+      `SELECT r.id_receta, rd.id_det_receta FROM malaga.recetas r
+       JOIN malaga.recetas_detalles rd ON rd.id_receta = r.id_receta WHERE r.id_prod = $1`,
+      [pt.idProd]
+    );
+    const c = await crearCierre(userId, 2);
+    await cierreBase(c, semi.idProd, 50);
+
+    // Lote de 10 kg anterior al cierre, del que una OP finalizada después del cierre consumió 4 kg.
+    const lote = await query<{ id_partistock: number }>(
+      `INSERT INTO malaga.f_partidas_stock (id_prod, cantidad, fecha_fab, lote, ts_ingreso, ts_baja_manual, motivo_baja_manual, user_baja_manual)
+       VALUES ($1, 10, CURRENT_DATE - 5, 'B-VIEJA', now() - interval '3 days', now(), 'vencido', $2) RETURNING id_partistock`,
+      [semi.idProd, userId]
+    );
+    const op = await query<{ id_op: number }>(
+      `INSERT INTO malaga.f_ordenes_produccion (id_prod, id_receta, cant_plan, fecha_plan, estado, ts_fin)
+       VALUES ($1, $2, 4, CURRENT_DATE, 'finalizada', now() - interval '1 hour') RETURNING id_op`,
+      [pt.idProd, receta.rows[0].id_receta]
+    );
+    await query(
+      `INSERT INTO malaga.f_trazabilidad_op (id_op, id_receta, id_detalle_receta, id_subprod, cant_subprod, id_parti_subprod, id_prod_op)
+       VALUES ($1, $2, $3, $4, 4, $5, $6)`,
+      [op.rows[0].id_op, receta.rows[0].id_receta, receta.rows[0].id_det_receta, semi.idProd, lote.rows[0].id_partistock, pt.idProd]
+    );
+
+    const fila = (await getStockTeoricoBases()).find((b) => b.idProd === semi.idProd)!;
+    expect(fila.stockTeorico).toBe(40); // 50 - 4 consumidos - 6 que quedaban del lote dado de baja
+  });
+
+  it("getStockTeoricoBases no suma una partida cuya OP terminó antes del cierre aunque se haya registrado después", async () => {
+    const userId = await seedUser();
+    const semi = await createProducto({ detalle: "Base Media", unidMed: "kg", tipoProducto: "SEMI" });
+    const c = await crearCierre(userId, 2);
+    await cierreBase(c, semi.idProd, 20);
+    const op = await query<{ id_op: number }>(
+      `INSERT INTO malaga.f_ordenes_produccion (id_prod, cant_plan, fecha_plan, estado, ts_fin)
+       VALUES ($1, 15, CURRENT_DATE - 3, 'finalizada', now() - interval '3 days') RETURNING id_op`,
+      [semi.idProd]
+    );
+    await query(
+      `INSERT INTO malaga.f_partidas_stock (id_prod, cantidad, fecha_fab, lote, ts_ingreso, id_op_origen)
+       VALUES ($1, 15, CURRENT_DATE - 3, 'TARDIA', now(), $2)`,
+      [semi.idProd, op.rows[0].id_op]
+    );
+
+    const fila = (await getStockTeoricoBases()).find((b) => b.idProd === semi.idProd)!;
+    expect(fila.stockTeorico).toBe(20);
+  });
+
+  it("getStockTeoricoBases suma una partida cuya OP terminó después del cierre aunque su ts_ingreso sea anterior", async () => {
+    const userId = await seedUser();
+    const semi = await createProducto({ detalle: "Base Media", unidMed: "kg", tipoProducto: "SEMI" });
+    const c = await crearCierre(userId, 2);
+    await cierreBase(c, semi.idProd, 20);
+    const op = await query<{ id_op: number }>(
+      `INSERT INTO malaga.f_ordenes_produccion (id_prod, cant_plan, fecha_plan, estado, ts_fin)
+       VALUES ($1, 7, CURRENT_DATE - 1, 'finalizada', now() - interval '1 day') RETURNING id_op`,
+      [semi.idProd]
+    );
+    await query(
+      `INSERT INTO malaga.f_partidas_stock (id_prod, cantidad, fecha_fab, lote, ts_ingreso, id_op_origen)
+       VALUES ($1, 7, CURRENT_DATE - 1, 'TEMPRANA', now() - interval '5 days', $2)`,
+      [semi.idProd, op.rows[0].id_op]
+    );
+
+    const fila = (await getStockTeoricoBases()).find((b) => b.idProd === semi.idProd)!;
+    expect(fila.stockTeorico).toBe(27);
+  });
+
+  it("getDatosCierre: sabor sin receta, receta inactiva e ítem que no es SEMI quedan sin ítems", async () => {
+    const userId = await seedUser();
+    const sinReceta = await createProducto({ detalle: "A Sin receta", unidMed: "kg", tipoProducto: "PT", pesoEstandar: 4 });
+    const inactiva = await createProducto({ detalle: "B Inactiva", unidMed: "kg", tipoProducto: "PT", pesoEstandar: 4 });
+    const mixta = await createProducto({ detalle: "C Mixta", unidMed: "kg", tipoProducto: "PT", pesoEstandar: 4 });
+    const semi = await createProducto({ detalle: "Base Media", unidMed: "kg", tipoProducto: "SEMI" });
+    const otroPt = await createProducto({ detalle: "Otro PT", unidMed: "kg", tipoProducto: "PT", pesoEstandar: 4 });
+    await createReceta({ idProd: inactiva.idProd, items: [{ idSubprod: semi.idProd, cantSubprod: 2 }], userAlta: userId });
+    await query(`UPDATE malaga.recetas SET activa = false WHERE id_prod = $1`, [inactiva.idProd]);
+    await createReceta({
+      idProd: mixta.idProd,
+      items: [
+        { idSubprod: semi.idProd, cantSubprod: 3 },
+        { idSubprod: otroPt.idProd, cantSubprod: 1 },
+      ],
+      userAlta: userId,
+    });
+    for (const [nro, p] of [[1, sinReceta], [2, inactiva], [3, mixta]] as const) {
+      await query(`INSERT INTO malaga.d_exhibidora (nro, id_prod) VALUES ($1, $2)`, [nro, p.idProd]);
+    }
+
+    const datos = await getDatosCierre();
+    const porId = new Map(datos.sabores.map((x) => [x.idProd, x]));
+    expect(datos.sabores).toHaveLength(3);
+    expect(porId.get(sinReceta.idProd)!.items).toEqual([]);
+    expect(porId.get(inactiva.idProd)!.items).toEqual([]);
+    expect(porId.get(mixta.idProd)!.items).toEqual([{ idSubprod: semi.idProd, cantSubprod: 3 }]);
+  }, 30000); // muchas escrituras seguidas contra la base remota
+
+  it("getDatosCierre informa las cocciones pendientes de una base", async () => {
+    const semi = await createProducto({ detalle: "Base Media", unidMed: "kg", tipoProducto: "SEMI" });
+    await query(
+      `INSERT INTO malaga.f_ordenes_produccion (id_prod, cant_plan, fecha_plan, estado) VALUES ($1, 25, CURRENT_DATE, 'planificada')`,
+      [semi.idProd]
+    );
+
+    const datos = await getDatosCierre();
+    const base = datos.bases.find((b) => b.idProd === semi.idProd)!;
+    expect(base.coccionesPendientes).toBe(25);
+  });
+
+  it("getDatosCierre incluye en bachasObrador las bachas de un sabor fuera de cartilla", async () => {
+    const fuera = await createProducto({ detalle: "Fuera de cartilla", unidMed: "kg", tipoProducto: "PT", pesoEstandar: 4 });
+    const idPartida = await crearPartidaPt(fuera.idProd, 4, "L1");
+
+    const datos = await getDatosCierre();
+    expect(datos.sabores).toEqual([]);
+    expect(datos.bachasObrador.map((b) => b.idPartida)).toEqual([idPartida]);
   });
 });
