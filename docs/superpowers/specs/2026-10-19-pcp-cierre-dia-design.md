@@ -2,7 +2,7 @@
 
 **Fecha:** 2026-10-19
 **Estado:** Diseño aprobado por el usuario, pendiente de revisión de la spec escrita y plan de implementación.
-**Reemplaza:** la pestaña "Plan" de `/pcp` definida en `2026-08-05-pcp-module-design.md` (pronóstico por regresión). Esa spec sigue vigente para la pestaña Estadísticas y la pantalla de factores.
+**Reemplaza:** la pestaña "Plan" de `/pcp` definida en `2026-08-05-pcp-module-design.md` (pronóstico por regresión). Esa spec sigue vigente para la pestaña Estadísticas. La pantalla de factores por día/producto queda sin uso en el plan nuevo (no se borra).
 
 ## 1. Contexto y problema
 
@@ -23,7 +23,7 @@ Una sola página en `/pcp` (pestaña "Cierre del día", reemplaza a "Plan"), con
 
 Al confirmar (un solo botón) se hace todo en una transacción: bajas por ajuste, creación de las OPs de fabricación y de cocción con `fecha_plan` = mañana, y se guarda el cierre completo (sección 5).
 
-Roles con acceso: `gestion`, `admin`, `produccion` (hoy `/pcp` es solo gestión/admin; la pestaña Estadísticas y la pantalla de factores siguen restringidas a gestión/admin).
+Roles con acceso: `gestion`, `admin`, `produccion` (hoy `/pcp` es solo gestión/admin; la pestaña Estadísticas sigue restringida a gestión/admin).
 
 ## 3. Cálculo
 
@@ -32,7 +32,7 @@ Sabores considerados: los de la cartilla actual y los programados para entrar (m
 ### 3.1 Fabricar (bachas)
 
 ```
-demanda_mañana(sabor) = demanda_base_kg_dia(sabor) × factor_dia(mañana) × (1 + margen_pct/100)
+demanda_mañana(sabor) = demanda_base_kg_dia(sabor) × (1 + margen_pct/100)
 
 stock_disponible(sabor) = kg en obrador sin exhibir (tras destildar)
                           + kg de la bacha exhibida × (pct_bacha / 100)
@@ -43,7 +43,7 @@ kg_a_fabricar = necesario > 0 ? ceil(necesario / peso_estandar) × peso_estandar
 bachas        = kg_a_fabricar / peso_estandar
 ```
 
-- `factor_dia` sale de `pcp_factor_dia_semana` (ya existe, editable en `/pcp/factores`).
+- La demanda es la misma todos los días de la semana (decisión del usuario: la variación por día de la semana ya no es real). No se usa `pcp_factor_dia_semana`.
 - `cocciones_pendientes` (para PT: OPs de fabricación pendientes) = suma de `cant_plan` de OPs de ese producto en estado `planificada` o `en_proceso`, como hoy.
 - Si un sabor no tiene `peso_estandar`, no se redondea a bacha (se usa `lote_optimo`/`lote_minimo` si existen, y si no, los kg exactos) y se marca la fila.
 - El stock mínimo de la ficha **no se usa** en este cálculo (el margen cumple esa función).
@@ -66,7 +66,7 @@ Si hay `faltante` se muestra un aviso rojo en la fila. Descongelar **no genera O
 
 ```
 consumo_diario_proyectado(base) = Σ sabores ( cant_subprod × demanda_base_kg_dia(sabor) × (1 + margen_pct/100) )
-                                  (promedio, sin factor por día de la semana)
+                                  (igual que la demanda de mañana: no hay variación por día)
 
 stock_tras_mañana(base) = stock_real − descongelar
 
@@ -148,7 +148,7 @@ malaga.f_cierre_dia_base (
 - El snapshot del cálculo por producto sigue yendo a `f_pcp_pronostico` (tabla existente; una fila por sabor y por base con cantidad planificada y `id_op_generada`). `stock_actual_momento` = `stock_disponible` (PT) o `stock_real` (base).
 - `margen_pct` y `dias_cobertura` se copian al cierre para poder auditar con qué valores se calculó.
 - Se pueden hacer varios cierres el mismo día: las OPs ya creadas cuentan como pendientes y no se duplican; para "teórico" y "cierre anterior" vale el último cierre.
-- Pantalla de configuración (kg/día por sabor, margen, días de cobertura) junto a `/pcp/factores`, solo gestión/admin.
+- Pantalla de configuración (kg/día por sabor, margen, días de cobertura) nueva, en `/pcp` (pestaña "Configuración"), solo gestión/admin.
 
 ## 6. Pantalla "Plan del día"
 
@@ -159,14 +159,14 @@ Vista de solo lectura del último cierre confirmado cuyo `fecha_plan` es hoy, co
 - Sabor en cartilla sin bacha exhibida en este momento: no hay fila de % y su `stock_disponible` es solo el del obrador.
 - Base que no está en ninguna receta de la cartilla: aparece en el bloque de stock (para contar y registrar la diferencia) pero su consumo proyectado es 0 y no se planifica cocción.
 - Base sin cierre previo: ver sección 4.
-- Mañana domingo/feriado sin demanda cargada: el factor del día en 0 anula la demanda; se puede editar a mano antes de confirmar.
+- Mañana es un día atípico (feriado, cierre del local): no hay factor por día; las cantidades de bachas y de cocción se editan a mano antes de confirmar.
 - El cierre exige haber elegido el % de todas las bachas exhibidas y cargado el stock real de todas las bases.
 
 ## 8. Fuera de alcance
 
 - Corregir automáticamente los lotes de Stock con el stock real.
 - Demanda automática desde historial (queda el cálculo por regresión en `src/lib/pcp/`, sin uso en el plan, y el historial de % del cierre para hacerlo más adelante).
-- Clima en la fórmula, factores por producto, días de cobertura por base.
+- Clima en la fórmula, factores por día o por producto, días de cobertura por base.
 - Registrar el descongelado como movimiento de stock.
 
 ## 9. Testing
