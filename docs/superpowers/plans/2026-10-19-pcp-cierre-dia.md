@@ -1893,7 +1893,7 @@ No llevan test automatizado propio (son una capa fina sobre funciones ya probada
 import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/auth/requireRole";
 import { confirmarCierre } from "@/lib/pcp/cierre-queries";
-import { hoyEnMalaga, mananaEnMalaga } from "@/lib/pcp/fechas";
+import { fechaEnMalaga, mananaEnMalaga } from "@/lib/pcp/fechas";
 
 interface PayloadCierre {
   ausentes: number[];
@@ -1924,7 +1924,7 @@ export async function confirmarCierreAction(
 
   try {
     const r = await confirmarCierre({
-      fecha: hoyEnMalaga(),
+      fecha: fechaEnMalaga(),
       fechaPlan: mananaEnMalaga(),
       userCierre: user.idUser,
       ausentes: payload.ausentes ?? [],
@@ -2509,7 +2509,7 @@ export async function ConfigTab() {
 
 ```tsx
 import { getPlanDelDia, type OpDelPlan } from "@/lib/pcp/cierre-queries";
-import { hoyEnMalaga } from "@/lib/pcp/fechas";
+import { fechaEnMalaga } from "@/lib/pcp/fechas";
 import { formatFechaHora } from "@/lib/formatDate";
 
 const fmt = (n: number) => n.toLocaleString("es-AR", { maximumFractionDigits: 2 });
@@ -2541,7 +2541,7 @@ function ListaOps({ titulo, ops, unidad }: { titulo: string; ops: OpDelPlan[]; u
 }
 
 export async function PlanDelDiaTab() {
-  const plan = await getPlanDelDia(hoyEnMalaga());
+  const plan = await getPlanDelDia(fechaEnMalaga());
 
   return (
     <div className="flex flex-col gap-5">
