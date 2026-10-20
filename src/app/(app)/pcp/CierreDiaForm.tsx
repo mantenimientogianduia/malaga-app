@@ -3,12 +3,24 @@
 import Link from "next/link";
 import { useActionState, useMemo, useState } from "react";
 import { confirmarCierreAction } from "./cierre-actions";
-import { calcularCierre, type StockSabor } from "@/lib/pcp/cierre-calc";
+import { calcularCierre, type EntradasCierre, type StockSabor } from "@/lib/pcp/cierre-calc";
 import type { DatosCierre } from "@/lib/pcp/cierre-queries";
 
 const PORCENTAJES = [0, 25, 50, 75, 100];
 
 const fmt = (n: number) => n.toLocaleString("es-AR", { maximumFractionDigits: 2 });
+
+const stockRealValido = (v: string | undefined) => v !== undefined && v.trim() !== "" && Number(v) >= 0;
+
+// La diferencia se redondea a 3 decimales (igual que la columna NUMERIC(12,3)) y -0 se muestra como 0.
+const redondear3 = (n: number) => Math.round(n * 1000) / 1000;
+const fmtDiferencia = (n: number) => n.toLocaleString("es-AR", { maximumFractionDigits: 3 });
+
+function sinClave(registro: Record<number, string>, clave: number): Record<number, string> {
+  const copia = { ...registro };
+  delete copia[clave];
+  return copia;
+}
 
 function aNumeros(editado: Record<number, string>): Record<number, number> {
   const salida: Record<number, number> = {};
@@ -52,29 +64,42 @@ export function CierreDiaForm({ datos }: { datos: DatosCierre }) {
   const bachasOverride = useMemo(() => aNumeros(bachasEdit), [bachasEdit]);
   const cocinarOverride = useMemo(() => aNumeros(cocinarEdit), [cocinarEdit]);
 
+  const entradasBase = useMemo<EntradasCierre>(
+    () => ({
+      margenPct: datos.margenPct,
+      diasCobertura: datos.diasCobertura,
+      sabores: datos.sabores,
+      stockSabores,
+      bases: datos.bases.map((b) => ({
+        idProd: b.idProd,
+        detalle: b.detalle,
+        stockReal: stockRealValido(stockReal[b.idProd]) ? Number(stockReal[b.idProd]) : 0,
+        coccionesPendientes: b.coccionesPendientes,
+        loteOptimo: b.loteOptimo,
+        loteMinimo: b.loteMinimo,
+      })),
+    }),
+    [datos, stockSabores, stockReal]
+  );
+
   const resultado = useMemo(
-    () =>
-      calcularCierre({
-        margenPct: datos.margenPct,
-        diasCobertura: datos.diasCobertura,
-        sabores: datos.sabores,
-        stockSabores,
-        bases: datos.bases.map((b) => ({
-          idProd: b.idProd,
-          detalle: b.detalle,
-          stockReal: Number(stockReal[b.idProd]) || 0,
-          coccionesPendientes: b.coccionesPendientes,
-          loteOptimo: b.loteOptimo,
-          loteMinimo: b.loteMinimo,
-        })),
-        bachasOverride,
-        cocinarOverride,
-      }),
-    [datos, stockSabores, stockReal, bachasOverride, cocinarOverride]
+    () => calcularCierre({ ...entradasBase, bachasOverride, cocinarOverride }),
+    [entradasBase, bachasOverride, cocinarOverride]
+  );
+
+  // Valores "puros" del cálculo, sin las ediciones manuales, para mostrarlos junto a lo editado.
+  // Bachas: sin ninguna edición. Kg a cocinar: con las bachas editadas (que sí cambian lo que se cocina)
+  // pero sin la edición del propio kg.
+  const bachasCalculadas = useMemo(
+    () => new Map(calcularCierre(entradasBase).fabricacion.map((f) => [f.idProd, f.bachas])),
+    [entradasBase]
+  );
+  const cocinarCalculado = useMemo(
+    () => new Map(calcularCierre({ ...entradasBase, bachasOverride }).bases.map((b) => [b.idProd, b.kgACocinar])),
+    [entradasBase, bachasOverride]
   );
 
   const faltanPct = datos.bachasExhibidas.filter((b) => pcts[b.idPartida] === undefined).length;
-  const stockRealValido = (v: string | undefined) => v !== undefined && v.trim() !== "" && Number(v) >= 0;
   const faltanBases = datos.bases.filter((b) => !stockRealValido(stockReal[b.idProd])).length;
   const completo = faltanPct === 0 && faltanBases === 0;
 
@@ -105,15 +130,17 @@ export function CierreDiaForm({ datos }: { datos: DatosCierre }) {
     );
   }
 
-  const obradorPorSabor = new Map<string, typeof datos.bachasObrador>();
+  const obradorPorSabor = new Map<number, { detalle: string; bachas: typeof datos.bachasObrador }>();
   for (const b of datos.bachasObrador) {
-    const lista = obradorPorSabor.get(b.detalle) ?? [];
-    lista.push(b);
-    obradorPorSabor.set(b.detalle, lista);
+    const grupo = obradorPorSabor.get(b.idProd) ?? { detalle: b.detalle, bachas: [] };
+    grupo.bachas.push(b);
+    obradorPorSabor.set(b.idProd, grupo);
   }
 
   const descongelarConDatos = resultado.bases.filter((b) => b.necesidadFabricacion > 0);
-  const cocinarConDatos = resultado.bases.filter((b) => b.consumoDiario > 0 || b.kgACocinar > 0);
+  const cocinarConDatos = resultado.bases.filter(
+    (b) => b.consumoDiario > 0 || b.kgACocinar > 0 || cocinarEdit[b.idProd] !== undefined
+  );
 
   return (
     <form action={formAction} className="flex flex-col gap-5">
@@ -127,14 +154,15 @@ export function CierreDiaForm({ datos }: { datos: DatosCierre }) {
           <p className="text-sm text-ink-soft">No hay bachas esperando en el obrador.</p>
         ) : (
           <div className="flex flex-col gap-3">
-            {Array.from(obradorPorSabor.entries()).map(([detalle, bachas]) => (
-              <div key={detalle}>
+            {Array.from(obradorPorSabor.entries()).map(([idProd, { detalle, bachas }]) => (
+              <div key={idProd}>
                 <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-ink-soft">{detalle}</p>
                 <div className="flex flex-col gap-1">
                   {bachas.map((b) => (
                     <label key={b.idPartida} className="flex items-center gap-2 text-sm text-ink">
                       <input
                         type="checkbox"
+                        className="h-5 w-5"
                         checked={!ausentes.has(b.idPartida)}
                         onChange={(e) => {
                           const siguiente = new Set(ausentes);
@@ -168,13 +196,18 @@ export function CierreDiaForm({ datos }: { datos: DatosCierre }) {
                   <span className="mr-2 font-mono text-xs text-ink-soft">#{b.nroPosicion}</span>
                   {b.detalle} <span className="text-xs text-ink-soft">({fmt(b.cantidad)} kg)</span>
                 </div>
-                <div className="flex gap-1">
+                <div
+                  role="group"
+                  aria-label={`Porcentaje que queda de ${b.detalle} (posición ${b.nroPosicion})`}
+                  className="flex gap-1"
+                >
                   {PORCENTAJES.map((p) => (
                     <button
                       key={p}
                       type="button"
+                      aria-pressed={pcts[b.idPartida] === p}
                       onClick={() => setPcts({ ...pcts, [b.idPartida]: p })}
-                      className={`rounded-md border px-2.5 py-1 text-xs font-semibold transition-colors ${
+                      className={`min-h-9 rounded-md border px-3 text-xs font-semibold transition-colors ${
                         pcts[b.idPartida] === p
                           ? "border-copper bg-copper text-white"
                           : "border-border text-ink hover:border-copper hover:text-copper"
@@ -210,7 +243,7 @@ export function CierreDiaForm({ datos }: { datos: DatosCierre }) {
               <tbody>
                 {datos.bases.map((b) => {
                   const real = stockReal[b.idProd];
-                  const diferencia = stockRealValido(real) ? Number(real) - b.stockTeorico : null;
+                  const diferencia = stockRealValido(real) ? redondear3(Number(real) - b.stockTeorico) || 0 : null;
                   return (
                     <tr key={b.idProd} className="border-b border-border last:border-0">
                       <td className="px-3 py-2 font-medium text-ink">{b.detalle}</td>
@@ -220,9 +253,11 @@ export function CierreDiaForm({ datos }: { datos: DatosCierre }) {
                           type="number"
                           step="0.001"
                           min="0"
+                          max="100000000"
+                          aria-label={`Stock real de ${b.detalle}`}
                           value={real ?? ""}
                           onChange={(e) => setStockReal({ ...stockReal, [b.idProd]: e.target.value })}
-                          className="w-24 rounded-md border border-border bg-surface-raised px-2 py-1 text-right font-mono text-sm"
+                          className="w-24 rounded-md border border-border bg-surface-raised px-2 py-1 text-right font-mono text-base sm:text-sm"
                         />
                       </td>
                       <td
@@ -230,7 +265,7 @@ export function CierreDiaForm({ datos }: { datos: DatosCierre }) {
                           diferencia === null || diferencia === 0 ? "text-ink-soft" : diferencia < 0 ? "text-bad" : "text-ok"
                         }`}
                       >
-                        {diferencia === null ? "—" : `${diferencia > 0 ? "+" : ""}${fmt(diferencia)}`}
+                        {diferencia === null ? "—" : `${diferencia > 0 ? "+" : ""}${fmtDiferencia(diferencia)}`}
                       </td>
                     </tr>
                   );
@@ -259,7 +294,10 @@ export function CierreDiaForm({ datos }: { datos: DatosCierre }) {
               </tr>
             </thead>
             <tbody>
-              {resultado.fabricacion.map((f) => (
+              {resultado.fabricacion.map((f) => {
+                const calculadas = bachasCalculadas.get(f.idProd) ?? 0;
+                const editada = !f.sinPeso && f.bachas !== calculadas;
+                return (
                 <tr key={f.idProd} className="border-b border-border last:border-0">
                   <td className="px-3 py-2 font-medium text-ink">
                     {f.detalle}
@@ -282,15 +320,33 @@ export function CierreDiaForm({ datos }: { datos: DatosCierre }) {
                       type="number"
                       step="1"
                       min="0"
+                      max="100000000"
                       disabled={f.sinPeso}
+                      aria-label={`Bachas de ${f.detalle}`}
+                      placeholder={String(f.bachas)}
                       value={bachasEdit[f.idProd] ?? String(f.bachas)}
                       onChange={(e) => setBachasEdit({ ...bachasEdit, [f.idProd]: e.target.value })}
-                      className="w-16 rounded-md border border-border bg-surface-raised px-2 py-1 text-right font-mono text-sm disabled:opacity-50"
+                      className="w-16 rounded-md border border-border bg-surface-raised px-2 py-1 text-right font-mono text-base disabled:opacity-50 sm:text-sm"
                     />
+                    {editada && (
+                      <div className="mt-1 flex flex-wrap items-center justify-end gap-x-2 gap-y-1 text-[10px]">
+                        <span className="rounded-full bg-warn-tint px-2 py-0.5 font-semibold text-warn">editado</span>
+                        <span className="text-ink-soft">calculado: {fmt(calculadas)}</span>
+                        <button
+                          type="button"
+                          aria-label={`Restaurar las bachas calculadas de ${f.detalle}`}
+                          onClick={() => setBachasEdit(sinClave(bachasEdit, f.idProd))}
+                          className="font-semibold text-copper underline hover:text-copper-strong"
+                        >
+                          restaurar
+                        </button>
+                      </div>
+                    )}
                   </td>
                   <td className="px-3 py-2 text-right font-mono text-ink">{fmt(f.kgAFabricar)}</td>
                 </tr>
-              ))}
+                );
+              })}
               {resultado.fabricacion.length === 0 && (
                 <tr>
                   <td colSpan={6} className="px-3 py-6 text-center text-ink-soft">
@@ -348,7 +404,10 @@ export function CierreDiaForm({ datos }: { datos: DatosCierre }) {
               </tr>
             </thead>
             <tbody>
-              {cocinarConDatos.map((b) => (
+              {cocinarConDatos.map((b) => {
+                const calculado = cocinarCalculado.get(b.idProd) ?? 0;
+                const editado = b.kgACocinar !== calculado;
+                return (
                 <tr key={b.idProd} className="border-b border-border last:border-0">
                   <td className="px-3 py-2 font-medium text-ink">{b.detalle}</td>
                   <td className="px-3 py-2 text-right font-mono text-ink-soft">{fmt(b.stockTrasManana)}</td>
@@ -359,13 +418,31 @@ export function CierreDiaForm({ datos }: { datos: DatosCierre }) {
                       type="number"
                       step="0.001"
                       min="0"
+                      max="100000000"
+                      aria-label={`Kg a cocinar de ${b.detalle}`}
+                      placeholder={String(b.kgACocinar)}
                       value={cocinarEdit[b.idProd] ?? String(b.kgACocinar)}
                       onChange={(e) => setCocinarEdit({ ...cocinarEdit, [b.idProd]: e.target.value })}
-                      className="w-24 rounded-md border border-border bg-surface-raised px-2 py-1 text-right font-mono text-sm"
+                      className="w-24 rounded-md border border-border bg-surface-raised px-2 py-1 text-right font-mono text-base sm:text-sm"
                     />
+                    {editado && (
+                      <div className="mt-1 flex flex-wrap items-center justify-end gap-x-2 gap-y-1 text-[10px]">
+                        <span className="rounded-full bg-warn-tint px-2 py-0.5 font-semibold text-warn">editado</span>
+                        <span className="text-ink-soft">calculado: {fmt(calculado)}</span>
+                        <button
+                          type="button"
+                          aria-label={`Restaurar los kg a cocinar calculados de ${b.detalle}`}
+                          onClick={() => setCocinarEdit(sinClave(cocinarEdit, b.idProd))}
+                          className="font-semibold text-copper underline hover:text-copper-strong"
+                        >
+                          restaurar
+                        </button>
+                      </div>
+                    )}
                   </td>
                 </tr>
-              ))}
+                );
+              })}
               {cocinarConDatos.length === 0 && (
                 <tr>
                   <td colSpan={5} className="px-3 py-6 text-center text-ink-soft">
@@ -378,18 +455,23 @@ export function CierreDiaForm({ datos }: { datos: DatosCierre }) {
         </div>
       </Seccion>
 
-      {state?.error && <p className="text-sm text-bad">{state.error}</p>}
+      {state?.error && (
+        <p role="alert" className="text-sm text-bad">
+          {state.error}
+        </p>
+      )}
 
       <div className="flex flex-wrap items-center gap-3">
         <button
           type="submit"
           disabled={pending || !completo}
+          aria-describedby={completo ? undefined : "cierre-faltan"}
           className="rounded-md bg-copper px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-copper-strong disabled:opacity-60"
         >
           {pending ? "Confirmando..." : "Confirmar cierre y generar OPs"}
         </button>
         {!completo && (
-          <span className="text-xs text-ink-soft">
+          <span id="cierre-faltan" className="text-xs text-ink-soft">
             Falta elegir el % de {faltanPct} bacha{faltanPct === 1 ? "" : "s"} y cargar el stock real de {faltanBases}{" "}
             base{faltanBases === 1 ? "" : "s"}.
           </span>
