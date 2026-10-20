@@ -27,7 +27,7 @@ const MOTIVO_LABEL: Record<string, string> = {
 };
 
 function textoSaborAnalisis(r: { saborDetalle: string | null; analisisOk: boolean | null; observacion: string | null }) {
-  if (r.analisisOk === null) return r.saborDetalle ?? "";
+  if (r.analisisOk === null) return r.saborDetalle ?? "Sabor y análisis: —";
   const analisis = r.analisisOk ? "OK" : "No OK";
   const obs = r.analisisOk === false && r.observacion ? ` — ${r.observacion}` : "";
   return `${r.saborDetalle} · análisis ${analisis}${obs}`;
@@ -195,14 +195,12 @@ export default async function AuditoriaPage() {
                   {r.userRegistro ? ` · ${r.userRegistro}` : ""}
                   {r.fueraDeRango ? " · fuera de rango" : ""}
                 </div>
-                {r.saborDetalle && (
-                  <div
-                    className="line-clamp-2 break-words text-[10.5px] text-ink-soft"
-                    title={textoSaborAnalisis(r)}
-                  >
-                    {textoSaborAnalisis(r)}
-                  </div>
-                )}
+                <div
+                  className="line-clamp-2 break-words text-[10.5px] text-ink-soft"
+                  title={textoSaborAnalisis(r)}
+                >
+                  {textoSaborAnalisis(r)}
+                </div>
               </div>
               <form action={deshacerRegistroTemperaturaAction} className="flex-none">
                 <input type="hidden" name="idRegistro" value={r.idRegistro} />
