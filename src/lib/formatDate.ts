@@ -5,13 +5,20 @@ export function formatFecha(fecha: string | null | undefined): string {
   return `${day}/${month}`;
 }
 
+const FORMATO_MALAGA = new Intl.DateTimeFormat("es-ES", {
+  timeZone: "Europe/Madrid",
+  day: "2-digit",
+  month: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+});
+
 export function formatFechaHora(ts: string | null | undefined): string {
   if (!ts) return "—";
   const date = new Date(ts);
   if (Number.isNaN(date.getTime())) return ts;
-  const day = String(date.getDate()).padStart(2, "0");
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const hours = String(date.getHours()).padStart(2, "0");
-  const minutes = String(date.getMinutes()).padStart(2, "0");
-  return `${day}/${month} ${hours}:${minutes}`;
+  const partes = Object.fromEntries(FORMATO_MALAGA.formatToParts(date).map((p) => [p.type, p.value]));
+  const dos = (v: string) => v.padStart(2, "0");
+  return `${dos(partes.day)}/${dos(partes.month)} ${dos(partes.hour)}:${dos(partes.minute)}`;
 }
