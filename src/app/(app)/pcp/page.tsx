@@ -20,7 +20,7 @@ export default async function PcpPage({ searchParams }: { searchParams: Promise<
   return (
     <div className="p-6 sm:p-8 lg:p-10">
       <div className="mb-5">
-        <p className="page-eyebrow mb-1">Cierre del día</p>
+        <p className="page-eyebrow mb-1">Producción</p>
         <h1 className="text-xl font-semibold text-ink">PCP</h1>
       </div>
 
