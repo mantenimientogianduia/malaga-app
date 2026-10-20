@@ -25,12 +25,16 @@ export async function confirmarCierreAction(
 ) {
   const user = await requireRole(["gestion", "admin", "produccion"]);
 
-  let payload: PayloadCierre;
+  let parsed: unknown;
   try {
-    payload = JSON.parse(String(formData.get("payload") ?? ""));
+    parsed = JSON.parse(String(formData.get("payload") ?? ""));
   } catch {
     return { error: "Los datos del cierre no son válidos." };
   }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    return { error: "Los datos del cierre no son válidos." };
+  }
+  const payload = parsed as Partial<PayloadCierre>;
 
   try {
     const r = await confirmarCierre({
