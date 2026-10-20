@@ -13,6 +13,7 @@ export async function ConfigTab() {
             Margen de seguridad sobre la demanda (%)
             <input
               name="margenPct"
+              required
               type="number"
               step="0.01"
               min="0"
@@ -24,6 +25,7 @@ export async function ConfigTab() {
             Días de cobertura de las bases
             <input
               name="diasCobertura"
+              required
               type="number"
               step="0.01"
               min="0"
@@ -50,6 +52,7 @@ export async function ConfigTab() {
               <div className="flex flex-none items-center gap-1.5">
                 <input
                   name="kgDia"
+                  required
                   type="number"
                   step="0.001"
                   min="0"
