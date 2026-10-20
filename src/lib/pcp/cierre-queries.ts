@@ -4,6 +4,7 @@ import {
   getCoccionesPendientesPorProducto,
   getItemsRecetaSemiPorProducto,
 } from "./queries";
+import { sumarDias } from "./fechas";
 import { calcularCierre, type SaborCierre, type StockSabor } from "./cierre-calc";
 
 export interface ConfigPcp {
@@ -283,6 +284,64 @@ export interface ResultadoConfirmacion {
 }
 
 const PORCENTAJES_VALIDOS = [0, 25, 50, 75, 100];
+// Tope razonable para kg y bachas: evita desbordes de NUMERIC(12,3) por una cifra tipeada de más.
+const VALOR_MAXIMO = 1e8;
+const FORMATO_FECHA = /^\d{4}-\d{2}-\d{2}$/;
+
+function fechaValida(f: unknown): boolean {
+  if (typeof f !== "string" || !FORMATO_FECHA.test(f)) return false;
+  try {
+    // El round-trip rechaza fechas inexistentes como 2030-02-30 (Date las desplaza al mes siguiente).
+    return sumarDias(f, 0) === f;
+  } catch {
+    return false;
+  }
+}
+
+const esCantidad = (v: unknown) => typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= VALOR_MAXIMO;
+const esRegistro = (v: unknown) => typeof v === "object" && v !== null && !Array.isArray(v);
+
+// Validaciones de forma: no dependen de la base, así que se hacen antes de abrir la transacción.
+function validarEntrada(input: ConfirmarCierreInput): void {
+  if (!fechaValida(input.fechaPlan)) throw new Error("La fecha del plan no es válida.");
+  if (!fechaValida(input.fecha)) throw new Error("La fecha del cierre no es válida.");
+  if (
+    !Array.isArray(input.ausentes) ||
+    !Array.isArray(input.pctBachas) ||
+    !esRegistro(input.stockReal) ||
+    !esRegistro(input.bachasOverride) ||
+    !esRegistro(input.cocinarOverride)
+  ) {
+    throw new Error("Los datos del cierre no son válidos.");
+  }
+  if (!Object.values(input.stockReal).every(esCantidad)) {
+    throw new Error("El stock real de cada base debe ser un número mayor o igual a 0.");
+  }
+  if (!Object.values(input.bachasOverride).every((v) => esCantidad(v) && Number.isInteger(v))) {
+    throw new Error("Las bachas deben ser un número entero mayor o igual a 0.");
+  }
+  if (!Object.values(input.cocinarOverride).every(esCantidad)) {
+    throw new Error("Los kg a cocinar deben ser un número mayor o igual a 0.");
+  }
+}
+
+// Stock de PT por sabor: obrador (sin las bachas destildadas) + exhibida ponderada por su %.
+function armarStockSabores(
+  datos: DatosCierre,
+  ausentes: Set<number>,
+  pctPorPartida: Map<number, number>
+): Record<number, StockSabor> {
+  const stockSabores: Record<number, StockSabor> = {};
+  const stockDe = (idProd: number): StockSabor =>
+    (stockSabores[idProd] ??= { kgObrador: 0, kgExhibidaPonderada: 0 });
+  for (const b of datos.bachasObrador) {
+    if (!ausentes.has(b.idPartida)) stockDe(b.idProd).kgObrador += b.cantidad;
+  }
+  for (const b of datos.bachasExhibidas) {
+    stockDe(b.idProd).kgExhibidaPonderada += (b.cantidad * (pctPorPartida.get(b.idPartida) as number)) / 100;
+  }
+  return stockSabores;
+}
 
 async function crearOpPlanificada(
   client: PoolClient,
@@ -304,73 +363,89 @@ async function crearOpPlanificada(
   return op.rows[0].id_op;
 }
 
+// Snapshot del cálculo por producto (una fila por sabor y por base).
+async function insertarPronostico(
+  client: PoolClient,
+  p: {
+    fechaPlan: string;
+    idProd: number;
+    demanda: number;
+    stock: number;
+    cocciones: number;
+    necesario: number;
+    cantidad: number;
+    idOp: number | null;
+    user: number;
+  }
+): Promise<void> {
+  await client.query(
+    `INSERT INTO malaga.f_pcp_pronostico
+       (fecha_plan, id_prod, demanda_pronosticada, stock_actual_momento, stock_minimo_momento,
+        cocciones_pendientes_momento, necesario, cantidad_planificada, id_op_generada, user_generado)
+     VALUES ($1, $2, $3, $4, 0, $5, $6, $7, $8, $9)`,
+    [p.fechaPlan, p.idProd, p.demanda, p.stock, p.cocciones, p.necesario, p.cantidad, p.idOp, p.user]
+  );
+}
+
 export async function confirmarCierre(input: ConfirmarCierreInput): Promise<ResultadoConfirmacion> {
-  const datos = await getDatosCierre();
-
-  const pctPorPartida = new Map(input.pctBachas.map((p) => [p.idPartida, p.pct]));
-  if (datos.bachasExhibidas.some((b) => !pctPorPartida.has(b.idPartida))) {
-    throw new Error("Falta indicar el % de todas las bachas exhibidas.");
-  }
-  if (input.pctBachas.some((p) => !PORCENTAJES_VALIDOS.includes(p.pct))) {
-    throw new Error("El % de cada bacha debe ser 0, 25, 50, 75 o 100.");
-  }
-  if (datos.bases.some((b) => input.stockReal[b.idProd] === undefined)) {
-    throw new Error("Falta cargar el stock real de todas las bases.");
-  }
-  if (Object.values(input.stockReal).some((v) => !Number.isFinite(v) || v < 0)) {
-    throw new Error("El stock real de cada base debe ser un número mayor o igual a 0.");
-  }
-  if (Object.values(input.bachasOverride).some((v) => !Number.isInteger(v) || v < 0)) {
-    throw new Error("Las bachas deben ser un número entero mayor o igual a 0.");
-  }
-  if (Object.values(input.cocinarOverride).some((v) => !Number.isFinite(v) || v < 0)) {
-    throw new Error("Los kg a cocinar deben ser un número mayor o igual a 0.");
-  }
-
-  const idsObrador = new Set(datos.bachasObrador.map((b) => b.idPartida));
-  const ausentes = new Set(input.ausentes.filter((id) => idsObrador.has(id)));
-
-  const stockSabores: Record<number, StockSabor> = {};
-  const stockDe = (idProd: number): StockSabor =>
-    (stockSabores[idProd] ??= { kgObrador: 0, kgExhibidaPonderada: 0 });
-  for (const b of datos.bachasObrador) {
-    if (!ausentes.has(b.idPartida)) stockDe(b.idProd).kgObrador += b.cantidad;
-  }
-  for (const b of datos.bachasExhibidas) {
-    stockDe(b.idProd).kgExhibidaPonderada += (b.cantidad * (pctPorPartida.get(b.idPartida) as number)) / 100;
-  }
-
-  const resultado = calcularCierre({
-    margenPct: datos.margenPct,
-    diasCobertura: datos.diasCobertura,
-    sabores: datos.sabores,
-    stockSabores,
-    bases: datos.bases.map((b) => ({
-      idProd: b.idProd,
-      detalle: b.detalle,
-      stockReal: input.stockReal[b.idProd],
-      coccionesPendientes: b.coccionesPendientes,
-      loteOptimo: b.loteOptimo,
-      loteMinimo: b.loteMinimo,
-    })),
-    bachasOverride: input.bachasOverride,
-    cocinarOverride: input.cocinarOverride,
-  });
-  const teoricoPorBase = new Map(datos.bases.map((b) => [b.idProd, b.stockTeorico]));
+  validarEntrada(input);
 
   return withTransaction(async (client) => {
+    // Un solo cierre a la vez: el que llega segundo espera acá y recién después lee los datos, así que
+    // ve las OPs y los stocks que dejó el primero (getDatosCierre usa el pool y lee lo ya commiteado).
+    await client.query("SELECT pg_advisory_xact_lock(hashtext('pcp_cierre_dia'))");
+    const datos = await getDatosCierre();
+
+    const pctPorPartida = new Map(input.pctBachas.map((p) => [p?.idPartida, p?.pct]));
+    if (datos.bachasExhibidas.some((b) => !pctPorPartida.has(b.idPartida))) {
+      throw new Error("Falta indicar el % de todas las bachas exhibidas.");
+    }
+    if (input.pctBachas.some((p) => !PORCENTAJES_VALIDOS.includes(p?.pct))) {
+      throw new Error("El % de cada bacha debe ser 0, 25, 50, 75 o 100.");
+    }
+    if (datos.bases.some((b) => input.stockReal[b.idProd] === undefined)) {
+      throw new Error("Falta cargar el stock real de todas las bases.");
+    }
+
+    const idsObrador = new Set(datos.bachasObrador.map((b) => b.idPartida));
+    const ausentes = new Set(input.ausentes.filter((id) => idsObrador.has(id)));
+    // Se redondea a 3 decimales como la columna NUMERIC(12,3): lo que se calcula es lo que se guarda.
+    const stockReal = (idProd: number) => Math.round(input.stockReal[idProd] * 1000) / 1000;
+
+    const resultado = calcularCierre({
+      margenPct: datos.margenPct,
+      diasCobertura: datos.diasCobertura,
+      sabores: datos.sabores,
+      stockSabores: armarStockSabores(datos, ausentes, pctPorPartida as Map<number, number>),
+      bases: datos.bases.map((b) => ({
+        idProd: b.idProd,
+        detalle: b.detalle,
+        stockReal: stockReal(b.idProd),
+        coccionesPendientes: b.coccionesPendientes,
+        loteOptimo: b.loteOptimo,
+        loteMinimo: b.loteMinimo,
+      })),
+      bachasOverride: input.bachasOverride,
+      cocinarOverride: input.cocinarOverride,
+    });
+    const teoricoPorBase = new Map(datos.bases.map((b) => [b.idProd, b.stockTeorico]));
+
     if (ausentes.size > 0) {
-      await client.query(
+      const bajas = await client.query(
         `UPDATE malaga.f_partidas_stock
          SET ts_baja_manual = now(), motivo_baja_manual = 'ajuste', user_baja_manual = $2
          WHERE id_partistock = ANY($1::int[]) AND ts_exhibicion IS NULL AND ts_baja_manual IS NULL`,
         [Array.from(ausentes), input.userCierre]
       );
+      if (bajas.rowCount !== ausentes.size) {
+        throw new Error("Cambió el estado de las bachas del obrador; volvé a cargar el cierre.");
+      }
     }
 
+    // clock_timestamp() (y no now()) para que el orden de ts_cierre coincida con el orden de commit.
     const cierre = await client.query<{ id_cierre: number }>(
-      `INSERT INTO malaga.f_cierre_dia (fecha, fecha_plan, user_cierre, margen_pct, dias_cobertura)
-       VALUES ($1, $2, $3, $4, $5) RETURNING id_cierre`,
+      `INSERT INTO malaga.f_cierre_dia (fecha, fecha_plan, ts_cierre, user_cierre, margen_pct, dias_cobertura)
+       VALUES ($1, $2, clock_timestamp(), $3, $4, $5) RETURNING id_cierre`,
       [input.fecha, input.fechaPlan, input.userCierre, datos.margenPct, datos.diasCobertura]
     );
     const idCierre = cierre.rows[0].id_cierre;
@@ -393,13 +468,17 @@ export async function confirmarCierre(input: ConfirmarCierreInput): Promise<Resu
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
         [idCierre, f.idProd, f.demandaManana, f.stockDisponible, f.coccionesPendientes, f.necesario, f.bachas, f.kgAFabricar, idOp]
       );
-      await client.query(
-        `INSERT INTO malaga.f_pcp_pronostico
-           (fecha_plan, id_prod, demanda_pronosticada, stock_actual_momento, stock_minimo_momento,
-            cocciones_pendientes_momento, necesario, cantidad_planificada, id_op_generada, user_generado)
-         VALUES ($1, $2, $3, $4, 0, $5, $6, $7, $8, $9)`,
-        [input.fechaPlan, f.idProd, f.demandaManana, f.stockDisponible, f.coccionesPendientes, f.necesario, f.kgAFabricar, idOp, input.userCierre]
-      );
+      await insertarPronostico(client, {
+        fechaPlan: input.fechaPlan,
+        idProd: f.idProd,
+        demanda: f.demandaManana,
+        stock: f.stockDisponible,
+        cocciones: f.coccionesPendientes,
+        necesario: f.necesario,
+        cantidad: f.kgAFabricar,
+        idOp,
+        user: input.userCierre,
+      });
     }
 
     const opsCoccion: number[] = [];
@@ -413,13 +492,17 @@ export async function confirmarCierre(input: ConfirmarCierreInput): Promise<Resu
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
         [idCierre, b.idProd, teoricoPorBase.get(b.idProd) ?? 0, b.stockReal, b.descongelar, b.faltante, b.kgACocinar, idOp]
       );
-      await client.query(
-        `INSERT INTO malaga.f_pcp_pronostico
-           (fecha_plan, id_prod, demanda_pronosticada, stock_actual_momento, stock_minimo_momento,
-            cocciones_pendientes_momento, necesario, cantidad_planificada, id_op_generada, user_generado)
-         VALUES ($1, $2, $3, $4, 0, $5, $6, $7, $8, $9)`,
-        [input.fechaPlan, b.idProd, b.necesidadFabricacion, b.stockReal, b.coccionesPendientes, b.aReponer, b.kgACocinar, idOp, input.userCierre]
-      );
+      await insertarPronostico(client, {
+        fechaPlan: input.fechaPlan,
+        idProd: b.idProd,
+        demanda: b.necesidadFabricacion,
+        stock: b.stockReal,
+        cocciones: b.coccionesPendientes,
+        necesario: b.aReponer,
+        cantidad: b.kgACocinar,
+        idOp,
+        user: input.userCierre,
+      });
     }
 
     return { idCierre, opsFabricacion, opsCoccion };

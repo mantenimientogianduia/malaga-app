@@ -512,6 +512,48 @@ function entradaCierre(
   };
 }
 
+// Entrada sin depender de un escenario: para validaciones de forma y casos con sus propios datos.
+function entradaMinima(userId: number, parcial: Partial<ConfirmarCierreInput> = {}): ConfirmarCierreInput {
+  return {
+    fecha: "2030-01-01",
+    fechaPlan: "2030-01-02",
+    userCierre: userId,
+    ausentes: [],
+    pctBachas: [],
+    stockReal: {},
+    bachasOverride: {},
+    cocinarOverride: {},
+    ...parcial,
+  };
+}
+
+// Después de un cierre fallido no debe quedar nada: ni la baja de la bacha ni filas del cierre.
+async function expectSinCambios(idBachaObrador: number) {
+  const bacha = await query<{
+    ts_baja_manual: string | null;
+    motivo_baja_manual: string | null;
+    user_baja_manual: number | null;
+  }>(
+    `SELECT ts_baja_manual, motivo_baja_manual, user_baja_manual FROM malaga.f_partidas_stock WHERE id_partistock = $1`,
+    [idBachaObrador]
+  );
+  expect(bacha.rows[0].ts_baja_manual).toBeNull();
+  expect(bacha.rows[0].motivo_baja_manual).toBeNull();
+  expect(bacha.rows[0].user_baja_manual).toBeNull();
+  const tablas = [
+    "f_cierre_dia",
+    "f_cierre_dia_bacha",
+    "f_cierre_dia_sabor",
+    "f_cierre_dia_base",
+    "f_pcp_pronostico",
+    "f_ordenes_produccion",
+  ];
+  for (const tabla of tablas) {
+    const r = await query<{ c: string }>(`SELECT count(*) AS c FROM malaga.${tabla}`);
+    expect(Number(r.rows[0].c), tabla).toBe(0);
+  }
+}
+
 describe("cierre queries — confirmar cierre", () => {
   beforeEach(limpiar);
   afterEach(limpiar);
@@ -663,34 +705,124 @@ describe("cierre queries — confirmar cierre", () => {
     ).rejects.toThrow("El % de cada bacha debe ser 0, 25, 50, 75 o 100.");
   }, TIMEOUT_ESCENARIO);
 
-  it("no deja ningún cambio si algo falla a mitad del cierre", async () => {
+  it("rechaza sin dejar cambios cuando la validación falla", async () => {
     const e = await escenarioBasico();
-    await expect(confirmarCierre(entradaCierre(e, { pctBachas: [] }))).rejects.toThrow();
-    const cierres = await query<{ c: string }>(`SELECT count(*) AS c FROM malaga.f_cierre_dia`);
-    const ops = await query<{ c: string }>(`SELECT count(*) AS c FROM malaga.f_ordenes_produccion`);
-    expect(Number(cierres.rows[0].c)).toBe(0);
-    expect(Number(ops.rows[0].c)).toBe(0);
+    await expect(confirmarCierre(entradaCierre(e, { ausentes: [e.obrador], pctBachas: [] }))).rejects.toThrow();
+    await expectSinCambios(e.obrador);
   }, TIMEOUT_ESCENARIO);
 
-  it("hace rollback de todo si falla DENTRO de la transaccion (despues de dar de baja una bacha)", async () => {
+  it("hace rollback de todo si falla DENTRO de la transacción (después de dar de baja una bacha)", async () => {
+    const e = await escenarioBasico();
+    // Una demanda enorme pasa todas las validaciones y desborda el NUMERIC(12,3) de la OP de fabricación:
+    // el error ocurre dentro de la transacción, después del UPDATE que da de baja la bacha ausente.
+    // (No sirve un userCierre inexistente: user_baja_manual también tiene FK y fallaría el propio UPDATE.)
+    await setDemandaBase(e.pt.idProd, 900000000);
+
+    await expect(confirmarCierre(entradaCierre(e, { ausentes: [e.obrador] }))).rejects.toThrow(
+      /overflow|out of range/i
+    );
+
+    await expectSinCambios(e.obrador);
+  }, TIMEOUT_ESCENARIO);
+
+  it("dos cierres simultáneos no duplican las OPs", async () => {
     const e = await escenarioBasico();
 
-    // La fecha inválida pasa las validaciones y falla en el INSERT de f_cierre_dia, ya dentro de la
-    // transacción y después del UPDATE que da de baja la bacha ausente.
-    await expect(
-      confirmarCierre(entradaCierre(e, { ausentes: [e.obrador], fechaPlan: "no-es-fecha" }))
-    ).rejects.toThrow();
+    const resultados = await Promise.allSettled([confirmarCierre(entradaCierre(e)), confirmarCierre(entradaCierre(e))]);
 
-    const bacha = await query<{ ts_baja_manual: string | null; motivo_baja_manual: string | null; user_baja_manual: number | null }>(
-      `SELECT ts_baja_manual, motivo_baja_manual, user_baja_manual FROM malaga.f_partidas_stock WHERE id_partistock = $1`,
-      [e.obrador]
+    expect(resultados.map((r) => r.status)).toEqual(["fulfilled", "fulfilled"]);
+    const ops = await query<{ c: string }>(`SELECT count(*) AS c FROM malaga.f_ordenes_produccion`);
+    expect(Number(ops.rows[0].c)).toBe(2); // 1 de fabricación y 1 de cocción
+    const cierres = await query<{ c: string }>(`SELECT count(*) AS c FROM malaga.f_cierre_dia`);
+    expect(Number(cierres.rows[0].c)).toBe(2);
+    const bases = await query<{ descongelar: string; faltante: string }>(
+      `SELECT descongelar, faltante FROM malaga.f_cierre_dia_base`
     );
-    expect(bacha.rows[0].ts_baja_manual).toBeNull();
-    expect(bacha.rows[0].motivo_baja_manual).toBeNull();
-    expect(bacha.rows[0].user_baja_manual).toBeNull();
-    for (const tabla of ["f_cierre_dia", "f_cierre_dia_bacha", "f_cierre_dia_sabor", "f_cierre_dia_base", "f_pcp_pronostico", "f_ordenes_produccion"]) {
-      const r = await query<{ c: string }>(`SELECT count(*) AS c FROM malaga.${tabla}`);
-      expect(Number(r.rows[0].c), tabla).toBe(0);
+    expect(bases.rows).toHaveLength(2);
+    for (const b of bases.rows) {
+      expect(Number(b.descongelar)).toBe(3);
+      expect(Number(b.faltante)).toBe(1);
     }
   }, TIMEOUT_ESCENARIO);
+
+  it("ignora los ausentes que no son bachas del obrador (ya exhibidas o inexistentes)", async () => {
+    const e = await escenarioBasico();
+
+    const r = await confirmarCierre(entradaCierre(e, { ausentes: [e.exhibida, 999999999] }));
+
+    const baja = await query<{ ts_baja_manual: string | null }>(
+      `SELECT ts_baja_manual FROM malaga.f_partidas_stock WHERE id_partistock IN ($1, $2)`,
+      [e.exhibida, e.obrador]
+    );
+    expect(baja.rows.every((x) => x.ts_baja_manual === null)).toBe(true);
+    expect(r.opsFabricacion).toHaveLength(1);
+  }, TIMEOUT_ESCENARIO);
+
+  it("un sabor sin peso estándar queda fuera del plan: sin OP, pero con su fila en el cierre", async () => {
+    // peso_estandar_obligatorio_pt impide un PT sin peso; el caso alcanzable es un producto no PT
+    // (SEMI, sin peso) cargado en la exhibidora.
+    const userId = await seedUser();
+    const sinPeso = await createProducto({ detalle: "Sin peso", unidMed: "kg", tipoProducto: "SEMI" });
+    await query(`INSERT INTO malaga.d_exhibidora (nro, id_prod) VALUES (1, $1)`, [sinPeso.idProd]);
+    await setDemandaBase(sinPeso.idProd, 10);
+
+    const r = await confirmarCierre(entradaMinima(userId, { stockReal: { [sinPeso.idProd]: 0 } }));
+
+    expect(r.opsFabricacion).toEqual([]);
+    const sabor = await query<{
+      demanda: string;
+      bachas: number;
+      kg_a_fabricar: string;
+      id_op_fabricar: number | null;
+    }>(`SELECT demanda, bachas, kg_a_fabricar, id_op_fabricar FROM malaga.f_cierre_dia_sabor WHERE id_cierre = $1`, [
+      r.idCierre,
+    ]);
+    expect(sabor.rows).toHaveLength(1);
+    expect(Number(sabor.rows[0].demanda)).toBe(12);
+    expect(sabor.rows[0].bachas).toBe(0);
+    expect(Number(sabor.rows[0].kg_a_fabricar)).toBe(0);
+    expect(sabor.rows[0].id_op_fabricar).toBeNull();
+  }, TIMEOUT_ESCENARIO);
+
+  it("una base con 0 kg a cocinar no crea OP", async () => {
+    const e = await escenarioBasico();
+
+    const r = await confirmarCierre(entradaCierre(e, { cocinarOverride: { [e.semi.idProd]: 0 } }));
+
+    expect(r.opsFabricacion).toHaveLength(1);
+    expect(r.opsCoccion).toEqual([]);
+    const base = await query<{ cocinar: string; id_op_cocinar: number | null }>(
+      `SELECT cocinar, id_op_cocinar FROM malaga.f_cierre_dia_base WHERE id_cierre = $1`,
+      [r.idCierre]
+    );
+    expect(Number(base.rows[0].cocinar)).toBe(0);
+    expect(base.rows[0].id_op_cocinar).toBeNull();
+  }, TIMEOUT_ESCENARIO);
+});
+
+// Validaciones de forma: se rechazan antes de tocar la base, así que no necesitan escenario.
+describe("cierre queries — validación de la entrada", () => {
+  const MSG_STOCK = "El stock real de cada base debe ser un número mayor o igual a 0.";
+  const MSG_BACHAS = "Las bachas deben ser un número entero mayor o igual a 0.";
+  const MSG_COCINAR = "Los kg a cocinar deben ser un número mayor o igual a 0.";
+
+  it.each([
+    ["el stock real es negativo", { stockReal: { 1: -1 } }, MSG_STOCK],
+    ["el stock real no es un número", { stockReal: { 1: Number.NaN } }, MSG_STOCK],
+    ["el stock real es absurdamente grande", { stockReal: { 1: 1e9 } }, MSG_STOCK],
+    ["las bachas editadas no son enteras", { bachasOverride: { 1: 1.5 } }, MSG_BACHAS],
+    ["las bachas editadas son negativas", { bachasOverride: { 1: -1 } }, MSG_BACHAS],
+    ["los kg a cocinar son negativos", { cocinarOverride: { 1: -5 } }, MSG_COCINAR],
+    ["la fecha del plan no existe", { fechaPlan: "2030-02-30" }, "La fecha del plan no es válida."],
+    ["la fecha del plan no tiene el formato esperado", { fechaPlan: "02/03/2030" }, "La fecha del plan no es válida."],
+    ["la fecha del cierre no existe", { fecha: "2030-13-01" }, "La fecha del cierre no es válida."],
+  ] as [string, Partial<ConfirmarCierreInput>, string][])("rechaza si %s", async (_nombre, parcial, mensaje) => {
+    await expect(confirmarCierre(entradaMinima(1, parcial))).rejects.toThrow(mensaje);
+  });
+
+  it("rechaza si ausentes o pctBachas no son listas", async () => {
+    const mensaje = "Los datos del cierre no son válidos.";
+    await expect(confirmarCierre(entradaMinima(1, { ausentes: "x" as unknown as number[] }))).rejects.toThrow(mensaje);
+    await expect(confirmarCierre(entradaMinima(1, { pctBachas: null as unknown as [] }))).rejects.toThrow(mensaje);
+  });
 });
