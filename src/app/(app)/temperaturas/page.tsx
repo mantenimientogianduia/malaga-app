@@ -88,6 +88,8 @@ export default async function TemperaturasPage() {
               <tr className="border-b border-border text-left text-[10px] uppercase tracking-wide text-ink-soft">
                 <th className="px-3.5 py-2.5">Punto</th>
                 <th className="px-3.5 py-2.5 text-right">Temperatura</th>
+                <th className="px-3.5 py-2.5">Sabor</th>
+                <th className="px-3.5 py-2.5">Análisis</th>
                 <th className="px-3.5 py-2.5">Cuándo</th>
                 <th className="px-3.5 py-2.5">Quién</th>
               </tr>
@@ -104,13 +106,26 @@ export default async function TemperaturasPage() {
                   >
                     {h.temperatura}°C
                   </td>
+                  <td className="px-3.5 py-2.5 text-ink-soft">{h.saborDetalle ?? "—"}</td>
+                  <td className="px-3.5 py-2.5">
+                    {h.analisisOk === null ? (
+                      <span className="text-ink-soft">—</span>
+                    ) : h.analisisOk ? (
+                      <span className="text-ok">OK</span>
+                    ) : (
+                      <span className="text-bad">
+                        No OK
+                        {h.observacion ? <span className="text-ink-soft"> — {h.observacion}</span> : null}
+                      </span>
+                    )}
+                  </td>
                   <td className="px-3.5 py-2.5 text-ink-soft">{formatFechaHora(h.tsRegistro)}</td>
                   <td className="px-3.5 py-2.5 text-ink-soft">{h.userRegistro ?? "—"}</td>
                 </tr>
               ))}
               {historial.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="px-3.5 py-6 text-center text-ink-soft">
+                  <td colSpan={6} className="px-3.5 py-6 text-center text-ink-soft">
                     Todavía no hay registros.
                   </td>
                 </tr>

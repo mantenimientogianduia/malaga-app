@@ -188,6 +188,12 @@ export default async function AuditoriaPage() {
                   {r.userRegistro ? ` · ${r.userRegistro}` : ""}
                   {r.fueraDeRango ? " · fuera de rango" : ""}
                 </div>
+                {r.saborDetalle && (
+                  <div className="truncate text-[10.5px] text-ink-soft">
+                    {r.saborDetalle} · análisis {r.analisisOk ? "OK" : "No OK"}
+                    {r.analisisOk === false && r.observacion ? ` — ${r.observacion}` : ""}
+                  </div>
+                )}
               </div>
               <form action={deshacerRegistroTemperaturaAction} className="flex-none">
                 <input type="hidden" name="idRegistro" value={r.idRegistro} />
