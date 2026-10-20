@@ -405,4 +405,63 @@ describe("temperaturas queries — base", () => {
       [3, "Vainilla"],
     ]);
   });
+
+  it("registrarTemperatura rechaza temperaturas que no son un número razonable", async () => {
+    const userRegistro = await seedUser();
+    const idProd = await seedSabor();
+    const [punto] = await listPuntos();
+    for (const temperatura of [NaN, Infinity, -Infinity, 1234, -100]) {
+      await expect(
+        registrarTemperatura(punto.idPunto, temperatura, userRegistro, detalleOk(idProd))
+      ).rejects.toThrow("La temperatura tiene que ser un número entre -99,9 y 99,9 °C.");
+    }
+  }, 30000); // varias validaciones contra la base remota: puede superar los 5 s por defecto
+
+  it("registrarTemperatura acepta los extremos -99.9 y 99.9", async () => {
+    const userRegistro = await seedUser();
+    const idProd = await seedSabor();
+    const [punto] = await listPuntos();
+
+    const { idRegistro } = await registrarTemperatura(punto.idPunto, -99.9, userRegistro, detalleOk(idProd));
+    await registrarTemperatura(punto.idPunto, 99.9, userRegistro, detalleOk(idProd));
+
+    const fila = await query<{ temperatura: string }>(
+      `SELECT temperatura FROM malaga.f_registro_temperaturas WHERE id_registro = $1`,
+      [idRegistro]
+    );
+    expect(fila.rows[0].temperatura).toBe("99.9");
+  }, 30000); // crea un producto y dos escrituras remotas: puede superar los 5 s por defecto
+
+  it("registrarTemperatura rechaza un idProd negativo o decimal", async () => {
+    const userRegistro = await seedUser();
+    const [punto] = await listPuntos();
+    for (const idProd of [-1, 1.5]) {
+      await expect(
+        registrarTemperatura(punto.idPunto, -12, userRegistro, { idProd, analisisOk: true, observacion: null })
+      ).rejects.toThrow("Elegí el sabor que medís.");
+    }
+  });
+
+  it("editar de No OK a OK deja la observación en NULL", async () => {
+    const userRegistro = await seedUser();
+    const idProd = await seedSabor();
+    const [punto] = await listPuntos();
+
+    const primero = await registrarTemperatura(punto.idPunto, -9, userRegistro, {
+      idProd,
+      analisisOk: false,
+      observacion: "con cristales",
+    });
+    await registrarTemperatura(punto.idPunto, -12, userRegistro, {
+      idProd,
+      analisisOk: true,
+      observacion: "esto se descarta",
+    });
+
+    const fila = await query<{ analisis_ok: boolean; observacion: string | null }>(
+      `SELECT analisis_ok, observacion FROM malaga.f_registro_temperaturas WHERE id_registro = $1`,
+      [primero.idRegistro]
+    );
+    expect(fila.rows[0]).toEqual({ analisis_ok: true, observacion: null });
+  }, 30000); // crea un producto y dos escrituras remotas: puede superar los 5 s por defecto
 });

@@ -133,6 +133,9 @@ export async function registrarTemperatura(
   userRegistro: number,
   detalle: DetalleRegistro
 ): Promise<{ idRegistro: number }> {
+  if (!Number.isFinite(temperatura) || temperatura < -99.9 || temperatura > 99.9) {
+    throw new Error("La temperatura tiene que ser un número entre -99,9 y 99,9 °C.");
+  }
   if (!Number.isInteger(detalle.idProd) || detalle.idProd <= 0) {
     throw new Error("Elegí el sabor que medís.");
   }
