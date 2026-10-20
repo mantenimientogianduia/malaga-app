@@ -39,6 +39,23 @@ export async function listPuntos(): Promise<PuntoTemperatura[]> {
   return result.rows.map(mapPunto);
 }
 
+export interface SaborExhibido {
+  idProd: number;
+  nroPosicion: number;
+  detalle: string;
+}
+
+// Sabores de la cartilla actual, ordenados por posición en la exhibidora.
+export async function listSaboresExhibidos(): Promise<SaborExhibido[]> {
+  const result = await query<{ id_prod: number; nro: number; detalle: string }>(
+    `SELECT p.id_prod, e.nro, p.detalle
+     FROM malaga.d_exhibidora e
+     JOIN malaga.d_productos p ON p.id_prod = e.id_prod
+     ORDER BY e.nro`
+  );
+  return result.rows.map((r) => ({ idProd: r.id_prod, nroPosicion: r.nro, detalle: r.detalle }));
+}
+
 export interface ConfigTemperaturas {
   tempMin: string;
   tempMax: string;
@@ -63,6 +80,10 @@ export interface PuntoConEstadoHoy extends PuntoTemperatura {
   registradoHoy: boolean;
   temperaturaHoy: string | null;
   fueraDeRangoHoy: boolean | null;
+  idProdHoy: number | null;
+  saborHoy: string | null;
+  analisisOkHoy: boolean | null;
+  observacionHoy: string | null;
 }
 
 export async function listPuntosConEstadoHoy(config: ConfigTemperaturas): Promise<PuntoConEstadoHoy[]> {
@@ -73,10 +94,16 @@ export async function listPuntosConEstadoHoy(config: ConfigTemperaturas): Promis
     posicion: "izquierda" | "derecha";
     detalle: string;
     temperatura: string | null;
+    id_prod: number | null;
+    sabor_detalle: string | null;
+    analisis_ok: boolean | null;
+    observacion: string | null;
   }>(
-    `SELECT p.id_punto, p.exhibidora, p.lado, p.posicion, p.detalle, r.temperatura
+    `SELECT p.id_punto, p.exhibidora, p.lado, p.posicion, p.detalle, r.temperatura,
+            r.id_prod, s.detalle AS sabor_detalle, r.analisis_ok, r.observacion
      FROM malaga.d_puntos_temperatura p
      LEFT JOIN malaga.f_registro_temperaturas r ON r.id_punto = p.id_punto AND r.fecha = CURRENT_DATE
+     LEFT JOIN malaga.d_productos s ON s.id_prod = r.id_prod
      ORDER BY p.exhibidora, p.lado, p.posicion`
   );
   return result.rows.map((r) => ({
@@ -87,26 +114,55 @@ export async function listPuntosConEstadoHoy(config: ConfigTemperaturas): Promis
       r.temperatura !== null
         ? Number(r.temperatura) < Number(config.tempMin) || Number(r.temperatura) > Number(config.tempMax)
         : null,
+    idProdHoy: r.id_prod,
+    saborHoy: r.sabor_detalle,
+    analisisOkHoy: r.analisis_ok,
+    observacionHoy: r.observacion,
   }));
+}
+
+export interface DetalleRegistro {
+  idProd: number;
+  analisisOk: boolean;
+  observacion: string | null;
 }
 
 export async function registrarTemperatura(
   idPunto: number,
   temperatura: number,
-  userRegistro: number
+  userRegistro: number,
+  detalle: DetalleRegistro
 ): Promise<{ idRegistro: number }> {
+  if (!Number.isInteger(detalle.idProd) || detalle.idProd <= 0) {
+    throw new Error("Elegí el sabor que medís.");
+  }
+  if (typeof detalle.analisisOk !== "boolean") {
+    throw new Error("Indicá el análisis sensorial/visual: OK o No OK.");
+  }
+  const observacion = (detalle.observacion ?? "").trim();
+  if (!detalle.analisisOk && observacion === "") {
+    throw new Error("Escribí la observación del análisis No OK.");
+  }
+
   const cierre = await query(`SELECT 1 FROM malaga.f_cierre_temperaturas WHERE fecha = CURRENT_DATE`);
   if (cierre.rows.length > 0) {
     throw new Error("El día ya está cerrado y firmado. Reabrilo para poder cargar o editar.");
   }
 
+  const enCartilla = await query(`SELECT 1 FROM malaga.d_exhibidora WHERE id_prod = $1 LIMIT 1`, [detalle.idProd]);
+  if (enCartilla.rows.length === 0) {
+    throw new Error("Ese sabor no está en la cartilla actual.");
+  }
+
   const result = await query<{ id_registro: number }>(
-    `INSERT INTO malaga.f_registro_temperaturas (id_punto, temperatura, user_registro)
-     VALUES ($1, $2, $3)
+    `INSERT INTO malaga.f_registro_temperaturas
+       (id_punto, temperatura, user_registro, id_prod, analisis_ok, observacion)
+     VALUES ($1, $2, $3, $4, $5, $6)
      ON CONFLICT (id_punto, fecha) DO UPDATE
-       SET temperatura = EXCLUDED.temperatura, ts_registro = now(), user_registro = EXCLUDED.user_registro
+       SET temperatura = EXCLUDED.temperatura, ts_registro = now(), user_registro = EXCLUDED.user_registro,
+           id_prod = EXCLUDED.id_prod, analisis_ok = EXCLUDED.analisis_ok, observacion = EXCLUDED.observacion
      RETURNING id_registro`,
-    [idPunto, temperatura, userRegistro]
+    [idPunto, temperatura, userRegistro, detalle.idProd, detalle.analisisOk, detalle.analisisOk ? null : observacion]
   );
   return { idRegistro: result.rows[0].id_registro };
 }
@@ -118,6 +174,9 @@ export interface RegistroTemperatura {
   tsRegistro: string;
   userRegistro: string | null;
   fueraDeRango: boolean;
+  saborDetalle: string | null;
+  analisisOk: boolean | null;
+  observacion: string | null;
 }
 
 export async function listHistorialReciente(
@@ -130,12 +189,17 @@ export async function listHistorialReciente(
     temperatura: string;
     ts_registro: string;
     user_registro: string | null;
+    sabor_detalle: string | null;
+    analisis_ok: boolean | null;
+    observacion: string | null;
   }>(
     `SELECT r.id_registro, p.detalle AS punto_detalle, r.temperatura,
-            r.ts_registro::text AS ts_registro, u.email AS user_registro
+            r.ts_registro::text AS ts_registro, u.email AS user_registro,
+            s.detalle AS sabor_detalle, r.analisis_ok, r.observacion
      FROM malaga.f_registro_temperaturas r
      JOIN malaga.d_puntos_temperatura p ON p.id_punto = r.id_punto
      LEFT JOIN malaga.usuarios u ON u.id_user = r.user_registro
+     LEFT JOIN malaga.d_productos s ON s.id_prod = r.id_prod
      ORDER BY r.ts_registro DESC
      LIMIT $1`,
     [limite]
@@ -148,6 +212,9 @@ export async function listHistorialReciente(
     userRegistro: r.user_registro,
     fueraDeRango:
       Number(r.temperatura) < Number(config.tempMin) || Number(r.temperatura) > Number(config.tempMax),
+    saborDetalle: r.sabor_detalle,
+    analisisOk: r.analisis_ok,
+    observacion: r.observacion,
   }));
 }
 

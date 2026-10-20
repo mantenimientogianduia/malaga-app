@@ -12,11 +12,16 @@ import {
   getCierreHoy,
   cerrarDia,
   reabrirDia,
+  listSaboresExhibidos,
+  type DetalleRegistro,
 } from "./queries";
+import { createProducto } from "../productos/queries";
 
 describe("temperaturas queries — base", () => {
   beforeEach(async () => {
-    await query("TRUNCATE malaga.f_registro_temperaturas, malaga.f_cierre_temperaturas RESTART IDENTITY CASCADE");
+    await query(
+      "TRUNCATE malaga.f_registro_temperaturas, malaga.f_cierre_temperaturas, malaga.d_exhibidora, malaga.d_productos RESTART IDENTITY CASCADE"
+    );
     await query(`UPDATE malaga.config_temperaturas SET temp_min = -14.0, temp_max = -12.0 WHERE id = 1`);
   });
 
@@ -40,6 +45,16 @@ describe("temperaturas queries — base", () => {
       `INSERT INTO malaga.usuarios (email, password_hash, rol) VALUES ('t-temp@t.com', 'x', 'admin') RETURNING id_user`
     );
     return r.rows[0].id_user;
+  }
+
+  async function seedSabor(detalle = "Vainilla", nro = 1) {
+    const p = await createProducto({ detalle, unidMed: "kg", tipoProducto: "PT", pesoEstandar: 4 });
+    await query(`INSERT INTO malaga.d_exhibidora (nro, id_prod) VALUES ($1, $2)`, [nro, p.idProd]);
+    return p.idProd;
+  }
+
+  function detalleOk(idProd: number): DetalleRegistro {
+    return { idProd, analisisOk: true, observacion: null };
   }
 
   it("listPuntos devuelve los 8 puntos fijos", async () => {
@@ -95,9 +110,10 @@ describe("temperaturas queries — base", () => {
 
   it("registrarTemperatura inserta el registro de hoy", async () => {
     const userRegistro = await seedUser();
+    const idProd = await seedSabor();
     const [punto] = await listPuntos();
 
-    const { idRegistro } = await registrarTemperatura(punto.idPunto, -13.5, userRegistro);
+    const { idRegistro } = await registrarTemperatura(punto.idPunto, -13.5, userRegistro, detalleOk(idProd));
 
     const fila = await query<{ temperatura: string; user_registro: number }>(
       `SELECT temperatura, user_registro FROM malaga.f_registro_temperaturas WHERE id_registro = $1`,
@@ -109,10 +125,11 @@ describe("temperaturas queries — base", () => {
 
   it("registrarTemperatura edita el valor si el punto ya tiene registro de hoy y el día está abierto", async () => {
     const userRegistro = await seedUser();
+    const idProd = await seedSabor();
     const [punto] = await listPuntos();
 
-    const primero = await registrarTemperatura(punto.idPunto, -13.5, userRegistro);
-    const segundo = await registrarTemperatura(punto.idPunto, -13.0, userRegistro);
+    const primero = await registrarTemperatura(punto.idPunto, -13.5, userRegistro, detalleOk(idProd));
+    const segundo = await registrarTemperatura(punto.idPunto, -13.0, userRegistro, detalleOk(idProd));
 
     expect(segundo.idRegistro).toBe(primero.idRegistro);
 
@@ -131,19 +148,21 @@ describe("temperaturas queries — base", () => {
 
   it("registrarTemperatura rechaza cargar o editar si el día ya está cerrado", async () => {
     const userRegistro = await seedUser();
+    const idProd = await seedSabor();
     const [punto] = await listPuntos();
     await cerrarDia(userRegistro);
 
-    await expect(registrarTemperatura(punto.idPunto, -13.0, userRegistro)).rejects.toThrow(
+    await expect(registrarTemperatura(punto.idPunto, -13.0, userRegistro, detalleOk(idProd))).rejects.toThrow(
       "El día ya está cerrado y firmado. Reabrilo para poder cargar o editar."
     );
   });
 
   it("listHistorialReciente marca fuera de rango y ordena por más reciente primero", async () => {
     const userRegistro = await seedUser();
+    const idProd = await seedSabor();
     const [p1, p2] = await listPuntos();
-    const { idRegistro: idNormal } = await registrarTemperatura(p1.idPunto, -13.0, userRegistro);
-    const { idRegistro: idDesvio } = await registrarTemperatura(p2.idPunto, -5.0, userRegistro);
+    const { idRegistro: idNormal } = await registrarTemperatura(p1.idPunto, -13.0, userRegistro, detalleOk(idProd));
+    const { idRegistro: idDesvio } = await registrarTemperatura(p2.idPunto, -5.0, userRegistro, detalleOk(idProd));
 
     const config = await getConfigTemperaturas();
     const historial = await listHistorialReciente(config);
@@ -175,8 +194,9 @@ describe("temperaturas queries — base", () => {
 
   it("deshacerRegistroTemperatura borra el registro y libera el punto para hoy", async () => {
     const userRegistro = await seedUser();
+    const idProd = await seedSabor();
     const [punto] = await listPuntos();
-    const { idRegistro } = await registrarTemperatura(punto.idPunto, -13.0, userRegistro);
+    const { idRegistro } = await registrarTemperatura(punto.idPunto, -13.0, userRegistro, detalleOk(idProd));
 
     await deshacerRegistroTemperatura(idRegistro);
 
@@ -184,13 +204,14 @@ describe("temperaturas queries — base", () => {
     const estado = await listPuntosConEstadoHoy(config);
     expect(estado.find((e) => e.idPunto === punto.idPunto)!.registradoHoy).toBe(false);
     // Vuelve a poder registrarse el mismo día sin error:
-    await expect(registrarTemperatura(punto.idPunto, -13.5, userRegistro)).resolves.toBeTruthy();
+    await expect(registrarTemperatura(punto.idPunto, -13.5, userRegistro, detalleOk(idProd))).resolves.toBeTruthy();
   });
 
   it("deshacerRegistroTemperatura rechaza si el día de ese registro está cerrado", async () => {
     const userRegistro = await seedUser();
+    const idProd = await seedSabor();
     const [punto] = await listPuntos();
-    const { idRegistro } = await registrarTemperatura(punto.idPunto, -13.0, userRegistro);
+    const { idRegistro } = await registrarTemperatura(punto.idPunto, -13.0, userRegistro, detalleOk(idProd));
 
     await cerrarDia(userRegistro);
 
@@ -214,5 +235,174 @@ describe("temperaturas queries — base", () => {
 
     await reabrirDia();
     expect(await getCierreHoy()).toBeNull();
+  });
+
+  it("registrarTemperatura guarda sabor, análisis OK y descarta la observación", async () => {
+    const userRegistro = await seedUser();
+    const idProd = await seedSabor();
+    const [punto] = await listPuntos();
+
+    const { idRegistro } = await registrarTemperatura(punto.idPunto, -12.5, userRegistro, {
+      idProd,
+      analisisOk: true,
+      observacion: "esto se descarta",
+    });
+
+    const fila = await query<{ id_prod: number; analisis_ok: boolean; observacion: string | null }>(
+      `SELECT id_prod, analisis_ok, observacion FROM malaga.f_registro_temperaturas WHERE id_registro = $1`,
+      [idRegistro]
+    );
+    expect(fila.rows[0]).toEqual({ id_prod: idProd, analisis_ok: true, observacion: null });
+  });
+
+  it("registrarTemperatura guarda un No OK con la observación recortada", async () => {
+    const userRegistro = await seedUser();
+    const idProd = await seedSabor();
+    const [punto] = await listPuntos();
+
+    const { idRegistro } = await registrarTemperatura(punto.idPunto, -9, userRegistro, {
+      idProd,
+      analisisOk: false,
+      observacion: "  textura arenosa  ",
+    });
+
+    const fila = await query<{ analisis_ok: boolean; observacion: string }>(
+      `SELECT analisis_ok, observacion FROM malaga.f_registro_temperaturas WHERE id_registro = $1`,
+      [idRegistro]
+    );
+    expect(fila.rows[0]).toEqual({ analisis_ok: false, observacion: "textura arenosa" });
+  });
+
+  it("registrarTemperatura exige el sabor", async () => {
+    const userRegistro = await seedUser();
+    const [punto] = await listPuntos();
+    await expect(
+      registrarTemperatura(punto.idPunto, -12, userRegistro, { idProd: 0, analisisOk: true, observacion: null })
+    ).rejects.toThrow("Elegí el sabor que medís.");
+  });
+
+  it("registrarTemperatura rechaza un sabor que no está en la cartilla", async () => {
+    const userRegistro = await seedUser();
+    await seedSabor();
+    const fuera = await createProducto({ detalle: "Frutilla", unidMed: "kg", tipoProducto: "PT", pesoEstandar: 4 });
+    const [punto] = await listPuntos();
+    await expect(
+      registrarTemperatura(punto.idPunto, -12, userRegistro, { idProd: fuera.idProd, analisisOk: true, observacion: null })
+    ).rejects.toThrow("Ese sabor no está en la cartilla actual.");
+  });
+
+  it("registrarTemperatura exige indicar el análisis", async () => {
+    const userRegistro = await seedUser();
+    const idProd = await seedSabor();
+    const [punto] = await listPuntos();
+    await expect(
+      registrarTemperatura(punto.idPunto, -12, userRegistro, {
+        idProd,
+        analisisOk: undefined as unknown as boolean,
+        observacion: null,
+      })
+    ).rejects.toThrow("Indicá el análisis sensorial/visual: OK o No OK.");
+  });
+
+  it("registrarTemperatura exige la observación cuando el análisis es No OK", async () => {
+    const userRegistro = await seedUser();
+    const idProd = await seedSabor();
+    const [punto] = await listPuntos();
+    for (const observacion of [null, "", "   "]) {
+      await expect(
+        registrarTemperatura(punto.idPunto, -12, userRegistro, { idProd, analisisOk: false, observacion })
+      ).rejects.toThrow("Escribí la observación del análisis No OK.");
+    }
+  });
+
+  it("la base rechaza un No OK sin observación aunque se inserte directo", async () => {
+    const userRegistro = await seedUser();
+    const [punto] = await listPuntos();
+    for (const observacion of [null, "", "   "]) {
+      await expect(
+        query(
+          `INSERT INTO malaga.f_registro_temperaturas (id_punto, temperatura, user_registro, analisis_ok, observacion)
+           VALUES ($1, -12, $2, false, $3)`,
+          [punto.idPunto, userRegistro, observacion]
+        )
+      ).rejects.toThrow(/chk_registro_temperaturas_observacion/);
+    }
+  }, 30000); // 3 inserts rechazados contra la base remota: cerca de los 5 s por defecto
+
+  it("editar un registro sobrescribe sabor, análisis y observación", async () => {
+    const userRegistro = await seedUser();
+    const vainilla = await seedSabor("Vainilla", 1);
+    const chocolate = await seedSabor("Chocolate", 2);
+    const [punto] = await listPuntos();
+
+    const primero = await registrarTemperatura(punto.idPunto, -12, userRegistro, detalleOk(vainilla));
+    const segundo = await registrarTemperatura(punto.idPunto, -9, userRegistro, {
+      idProd: chocolate,
+      analisisOk: false,
+      observacion: "con cristales",
+    });
+
+    expect(segundo.idRegistro).toBe(primero.idRegistro);
+    const fila = await query<{ id_prod: number; analisis_ok: boolean; observacion: string }>(
+      `SELECT id_prod, analisis_ok, observacion FROM malaga.f_registro_temperaturas WHERE id_registro = $1`,
+      [primero.idRegistro]
+    );
+    expect(fila.rows[0]).toEqual({ id_prod: chocolate, analisis_ok: false, observacion: "con cristales" });
+  }, 30000); // crea 2 productos en la base remota: puede superar los 5 s por defecto
+
+  it("listPuntosConEstadoHoy devuelve sabor, análisis y observación del registro de hoy", async () => {
+    const userRegistro = await seedUser();
+    const idProd = await seedSabor("Pistacho");
+    const [p1, p2] = await listPuntos();
+    await registrarTemperatura(p1.idPunto, -12, userRegistro, {
+      idProd,
+      analisisOk: false,
+      observacion: "color apagado",
+    });
+
+    const config = await getConfigTemperaturas();
+    const estado = await listPuntosConEstadoHoy(config);
+    const e1 = estado.find((e) => e.idPunto === p1.idPunto)!;
+    const e2 = estado.find((e) => e.idPunto === p2.idPunto)!;
+    expect(e1).toMatchObject({
+      idProdHoy: idProd,
+      saborHoy: "Pistacho",
+      analisisOkHoy: false,
+      observacionHoy: "color apagado",
+    });
+    expect(e2).toMatchObject({ idProdHoy: null, saborHoy: null, analisisOkHoy: null, observacionHoy: null });
+  });
+
+  it("listHistorialReciente devuelve los campos nuevos y null en los registros viejos", async () => {
+    const userRegistro = await seedUser();
+    const idProd = await seedSabor("Pistacho");
+    const [p1, p2] = await listPuntos();
+    // Registro "viejo": sin sabor ni análisis.
+    await query(
+      `INSERT INTO malaga.f_registro_temperaturas (id_punto, temperatura, user_registro, ts_registro)
+       VALUES ($1, -12, $2, now() - interval '1 hour')`,
+      [p1.idPunto, userRegistro]
+    );
+    const { idRegistro } = await registrarTemperatura(p2.idPunto, -13, userRegistro, detalleOk(idProd));
+
+    const config = await getConfigTemperaturas();
+    const historial = await listHistorialReciente(config);
+    const nuevo = historial.find((h) => h.idRegistro === idRegistro)!;
+    const viejo = historial.find((h) => h.idRegistro !== idRegistro)!;
+    expect(nuevo).toMatchObject({ saborDetalle: "Pistacho", analisisOk: true, observacion: null });
+    expect(viejo).toMatchObject({ saborDetalle: null, analisisOk: null, observacion: null });
+  });
+
+  it("listSaboresExhibidos devuelve los sabores de la cartilla en orden de posición", async () => {
+    await seedSabor("Vainilla", 3);
+    await seedSabor("Chocolate", 1);
+    await seedSabor("Pistacho", 2);
+
+    const sabores = await listSaboresExhibidos();
+    expect(sabores.map((s) => [s.nroPosicion, s.detalle])).toEqual([
+      [1, "Chocolate"],
+      [2, "Pistacho"],
+      [3, "Vainilla"],
+    ]);
   });
 });
