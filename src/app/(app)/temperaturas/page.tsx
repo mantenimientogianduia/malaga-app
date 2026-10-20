@@ -15,11 +15,11 @@ import { CierreDiaControls } from "./CierreDiaControls";
 export default async function TemperaturasPage() {
   const user = await requireRole(["gestion", "admin", "produccion"]);
 
-  const [puntos, config, historial, resumen, cierre] = await Promise.all([
-    listPuntosConEstadoHoy(),
-    getConfigTemperaturas(),
-    listHistorialReciente(),
-    getResumen30Dias(),
+  const config = await getConfigTemperaturas();
+  const [puntos, historial, resumen, cierre] = await Promise.all([
+    listPuntosConEstadoHoy(config),
+    listHistorialReciente(config),
+    getResumen30Dias(config),
     getCierreHoy(),
   ]);
 

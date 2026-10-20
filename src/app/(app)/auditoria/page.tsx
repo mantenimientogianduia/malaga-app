@@ -2,7 +2,7 @@ import { requireRole } from "@/lib/auth/requireRole";
 import { listExhibicionesRecientes } from "@/lib/exhibidora/queries";
 import { listOrdenesRecientes } from "@/lib/ordenes/queries";
 import { listCierresRecientes } from "@/lib/stock/queries";
-import { listHistorialReciente } from "@/lib/temperaturas/queries";
+import { listHistorialReciente, getConfigTemperaturas } from "@/lib/temperaturas/queries";
 import { formatFechaHora } from "@/lib/formatDate";
 import { IconHistory, IconStorefront, IconClipboard, IconFlask, IconThermometer } from "@/components/icons";
 import {
@@ -29,11 +29,12 @@ const MOTIVO_LABEL: Record<string, string> = {
 export default async function AuditoriaPage() {
   await requireRole(["gestion", "admin"]);
 
+  const configTemperaturas = await getConfigTemperaturas();
   const [exhibiciones, ordenes, cierres, registrosTemperatura] = await Promise.all([
     listExhibicionesRecientes(),
     listOrdenesRecientes(),
     listCierresRecientes(),
-    listHistorialReciente(15),
+    listHistorialReciente(configTemperaturas, 15),
   ]);
 
   return (

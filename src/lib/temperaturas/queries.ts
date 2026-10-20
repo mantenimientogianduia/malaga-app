@@ -65,8 +65,7 @@ export interface PuntoConEstadoHoy extends PuntoTemperatura {
   fueraDeRangoHoy: boolean | null;
 }
 
-export async function listPuntosConEstadoHoy(): Promise<PuntoConEstadoHoy[]> {
-  const config = await getConfigTemperaturas();
+export async function listPuntosConEstadoHoy(config: ConfigTemperaturas): Promise<PuntoConEstadoHoy[]> {
   const result = await query<{
     id_punto: number;
     exhibidora: number;
@@ -121,8 +120,10 @@ export interface RegistroTemperatura {
   fueraDeRango: boolean;
 }
 
-export async function listHistorialReciente(limite = 40): Promise<RegistroTemperatura[]> {
-  const config = await getConfigTemperaturas();
+export async function listHistorialReciente(
+  config: ConfigTemperaturas,
+  limite = 40
+): Promise<RegistroTemperatura[]> {
   const result = await query<{
     id_registro: number;
     punto_detalle: string;
@@ -157,8 +158,7 @@ export interface ResumenPunto {
   desvios: number;
 }
 
-export async function getResumen30Dias(): Promise<ResumenPunto[]> {
-  const config = await getConfigTemperaturas();
+export async function getResumen30Dias(config: ConfigTemperaturas): Promise<ResumenPunto[]> {
   const result = await query<{
     id_punto: number;
     punto_detalle: string;

@@ -79,7 +79,8 @@ describe("temperaturas queries — base", () => {
       [p2.idPunto, userRegistro]
     );
 
-    const estado = await listPuntosConEstadoHoy();
+    const config = await getConfigTemperaturas();
+    const estado = await listPuntosConEstadoHoy(config);
     const e1 = estado.find((e) => e.idPunto === p1.idPunto)!;
     const e2 = estado.find((e) => e.idPunto === p2.idPunto)!;
     const e3 = estado.find((e) => e.idPunto === p3.idPunto)!;
@@ -144,7 +145,8 @@ describe("temperaturas queries — base", () => {
     const { idRegistro: idNormal } = await registrarTemperatura(p1.idPunto, -13.0, userRegistro);
     const { idRegistro: idDesvio } = await registrarTemperatura(p2.idPunto, -5.0, userRegistro);
 
-    const historial = await listHistorialReciente();
+    const config = await getConfigTemperaturas();
+    const historial = await listHistorialReciente(config);
     expect(historial.map((h) => h.idRegistro)).toEqual([idDesvio, idNormal]);
     expect(historial.find((h) => h.idRegistro === idDesvio)!.fueraDeRango).toBe(true);
     expect(historial.find((h) => h.idRegistro === idNormal)!.fueraDeRango).toBe(false);
@@ -164,7 +166,8 @@ describe("temperaturas queries — base", () => {
       [punto.idPunto, userRegistro]
     );
 
-    const resumen = await getResumen30Dias();
+    const config = await getConfigTemperaturas();
+    const resumen = await getResumen30Dias(config);
     const fila = resumen.find((r) => r.idPunto === punto.idPunto)!;
     expect(fila.promedio).toBeCloseTo(-9.0, 5);
     expect(fila.desvios).toBe(1);
@@ -177,7 +180,8 @@ describe("temperaturas queries — base", () => {
 
     await deshacerRegistroTemperatura(idRegistro);
 
-    const estado = await listPuntosConEstadoHoy();
+    const config = await getConfigTemperaturas();
+    const estado = await listPuntosConEstadoHoy(config);
     expect(estado.find((e) => e.idPunto === punto.idPunto)!.registradoHoy).toBe(false);
     // Vuelve a poder registrarse el mismo día sin error:
     await expect(registrarTemperatura(punto.idPunto, -13.5, userRegistro)).resolves.toBeTruthy();

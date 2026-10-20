@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { requireUser } from "@/lib/auth/requireRole";
-import { listPuntosConEstadoHoy, getCierreHoy } from "@/lib/temperaturas/queries";
+import { listPuntosConEstadoHoy, getConfigTemperaturas, getCierreHoy } from "@/lib/temperaturas/queries";
 
 export default async function Home() {
   const user = await requireUser();
-  const [puntos, cierre] = await Promise.all([listPuntosConEstadoHoy(), getCierreHoy()]);
+  const config = await getConfigTemperaturas();
+  const [puntos, cierre] = await Promise.all([listPuntosConEstadoHoy(config), getCierreHoy()]);
   const faltan = puntos.filter((p) => !p.registradoHoy).length;
 
   return (
