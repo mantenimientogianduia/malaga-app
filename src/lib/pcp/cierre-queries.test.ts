@@ -13,6 +13,7 @@ import {
   getStockTeoricoBases,
   getDatosCierre,
   confirmarCierre,
+  getPlanDelDia,
   type ConfirmarCierreInput,
 } from "./cierre-queries";
 
@@ -825,4 +826,56 @@ describe("cierre queries — validación de la entrada", () => {
     await expect(confirmarCierre(entradaMinima(1, { ausentes: "x" as unknown as number[] }))).rejects.toThrow(mensaje);
     await expect(confirmarCierre(entradaMinima(1, { pctBachas: null as unknown as [] }))).rejects.toThrow(mensaje);
   });
+});
+
+describe("cierre queries — plan del día", () => {
+  beforeEach(limpiar);
+  afterEach(limpiar);
+
+  it("sin cierre devuelve listas vacías", async () => {
+    const plan = await getPlanDelDia("2030-01-02");
+    expect(plan.cierre).toBeNull();
+    expect(plan.fabricar).toEqual([]);
+    expect(plan.cocinar).toEqual([]);
+    expect(plan.descongelar).toEqual([]);
+  });
+
+  it("arma fabricar, cocinar y descongelar con las OPs de hoy y el último cierre", async () => {
+    const e = await escenarioBasico();
+    await confirmarCierre(entradaCierre(e));
+
+    const plan = await getPlanDelDia("2030-01-02");
+
+    expect(plan.cierre).not.toBeNull();
+    expect(plan.cierre!.userCierre).toBe("cierre@t.com");
+    expect(plan.fabricar).toHaveLength(1);
+    expect(plan.fabricar[0]).toMatchObject({ productoDetalle: "Vainilla", cantPlan: 8 });
+    expect(plan.cocinar).toHaveLength(1);
+    expect(plan.cocinar[0]).toMatchObject({ productoDetalle: "Base Media", cantPlan: 20 });
+    expect(plan.descongelar).toEqual([{ idProd: e.semi.idProd, detalle: "Base Media", descongelar: 3, faltante: 1 }]);
+  }, TIMEOUT_ESCENARIO);
+
+  it("no incluye OPs canceladas ni de otras fechas", async () => {
+    const e = await escenarioBasico();
+    const r = await confirmarCierre(entradaCierre(e));
+    await query(`UPDATE malaga.f_ordenes_produccion SET estado = 'cancelada' WHERE id_op = $1`, [r.opsCoccion[0]]);
+
+    const plan = await getPlanDelDia("2030-01-02");
+    expect(plan.cocinar).toEqual([]);
+    expect(plan.fabricar).toHaveLength(1);
+
+    const otroDia = await getPlanDelDia("2030-01-09");
+    expect(otroDia.fabricar).toEqual([]);
+    expect(otroDia.cierre).toBeNull();
+  }, TIMEOUT_ESCENARIO);
+
+  it("si se repitió el cierre, el descongelado sale del último cierre", async () => {
+    const e = await escenarioBasico();
+    await confirmarCierre(entradaCierre(e));
+    await confirmarCierre(entradaCierre(e));
+
+    const plan = await getPlanDelDia("2030-01-02");
+    expect(plan.descongelar).toHaveLength(1);
+    expect(plan.fabricar).toHaveLength(1);
+  }, TIMEOUT_ESCENARIO);
 });

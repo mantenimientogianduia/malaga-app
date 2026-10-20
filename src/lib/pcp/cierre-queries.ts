@@ -508,3 +508,81 @@ export async function confirmarCierre(input: ConfirmarCierreInput): Promise<Resu
     return { idCierre, opsFabricacion, opsCoccion };
   });
 }
+
+export interface OpDelPlan {
+  idOp: number;
+  productoDetalle: string;
+  cantPlan: number;
+  estado: string;
+}
+
+export interface DescongelarFila {
+  idProd: number;
+  detalle: string;
+  descongelar: number;
+  faltante: number;
+}
+
+export interface PlanDelDia {
+  cierre: { idCierre: number; tsCierre: string; userCierre: string | null } | null;
+  fabricar: OpDelPlan[];
+  cocinar: OpDelPlan[];
+  descongelar: DescongelarFila[];
+}
+
+async function listOpsDelDia(fecha: string, tipo: "PT" | "SEMI"): Promise<OpDelPlan[]> {
+  const result = await query<{ id_op: number; detalle: string; cant_plan: string; estado: string }>(
+    `SELECT o.id_op, p.detalle, o.cant_plan, o.estado
+     FROM malaga.f_ordenes_produccion o
+     JOIN malaga.d_productos p ON p.id_prod = o.id_prod
+     WHERE o.fecha_plan = $1 AND p.tipo_producto = $2 AND o.estado <> 'cancelada'
+     ORDER BY p.detalle, o.id_op`,
+    [fecha, tipo]
+  );
+  return result.rows.map((r) => ({
+    idOp: r.id_op,
+    productoDetalle: r.detalle,
+    cantPlan: Number(r.cant_plan),
+    estado: r.estado,
+  }));
+}
+
+// Lo que el equipo tiene que hacer en `fechaHoy`: OPs de fabricación y cocción con esa fecha
+// y el descongelado del último cierre que planificó ese día.
+export async function getPlanDelDia(fechaHoy: string): Promise<PlanDelDia> {
+  const fabricar = await listOpsDelDia(fechaHoy, "PT");
+  const cocinar = await listOpsDelDia(fechaHoy, "SEMI");
+
+  const cierreResult = await query<{ id_cierre: number; ts_cierre: string; user_cierre: string | null }>(
+    `SELECT c.id_cierre, c.ts_cierre::text AS ts_cierre, u.email AS user_cierre
+     FROM malaga.f_cierre_dia c
+     LEFT JOIN malaga.usuarios u ON u.id_user = c.user_cierre
+     WHERE c.fecha_plan = $1
+     ORDER BY c.ts_cierre DESC, c.id_cierre DESC
+     LIMIT 1`,
+    [fechaHoy]
+  );
+  const cierreRow = cierreResult.rows[0];
+  if (!cierreRow) return { cierre: null, fabricar, cocinar, descongelar: [] };
+
+  const descongelarResult = await query<{ id_prod: number; detalle: string; descongelar: string; faltante: string }>(
+    `SELECT b.id_prod, p.detalle, b.descongelar, b.faltante
+     FROM malaga.f_cierre_dia_base b
+     JOIN malaga.d_productos p ON p.id_prod = b.id_prod
+     WHERE b.id_cierre = $1 AND (b.descongelar > 0 OR b.faltante > 0)
+     ORDER BY p.detalle`,
+    [cierreRow.id_cierre]
+  );
+
+  return {
+    cierre: { idCierre: cierreRow.id_cierre, tsCierre: cierreRow.ts_cierre, userCierre: cierreRow.user_cierre },
+    fabricar,
+    cocinar,
+    descongelar: descongelarResult.rows.map((r) => ({
+      idProd: r.id_prod,
+      detalle: r.detalle,
+      descongelar: Number(r.descongelar),
+      faltante: Number(r.faltante),
+    })),
+  };
+}
