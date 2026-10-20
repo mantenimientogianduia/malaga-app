@@ -26,6 +26,13 @@ const MOTIVO_LABEL: Record<string, string> = {
   ajuste: "Ajuste",
 };
 
+function textoSaborAnalisis(r: { saborDetalle: string | null; analisisOk: boolean | null; observacion: string | null }) {
+  if (r.analisisOk === null) return r.saborDetalle ?? "";
+  const analisis = r.analisisOk ? "OK" : "No OK";
+  const obs = r.analisisOk === false && r.observacion ? ` — ${r.observacion}` : "";
+  return `${r.saborDetalle} · análisis ${analisis}${obs}`;
+}
+
 export default async function AuditoriaPage() {
   await requireRole(["gestion", "admin"]);
 
@@ -189,9 +196,11 @@ export default async function AuditoriaPage() {
                   {r.fueraDeRango ? " · fuera de rango" : ""}
                 </div>
                 {r.saborDetalle && (
-                  <div className="truncate text-[10.5px] text-ink-soft">
-                    {r.saborDetalle} · análisis {r.analisisOk ? "OK" : "No OK"}
-                    {r.analisisOk === false && r.observacion ? ` — ${r.observacion}` : ""}
+                  <div
+                    className="line-clamp-2 break-words text-[10.5px] text-ink-soft"
+                    title={textoSaborAnalisis(r)}
+                  >
+                    {textoSaborAnalisis(r)}
                   </div>
                 )}
               </div>

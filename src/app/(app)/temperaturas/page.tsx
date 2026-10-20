@@ -115,7 +115,12 @@ export default async function TemperaturasPage() {
                     ) : (
                       <span className="text-bad">
                         No OK
-                        {h.observacion ? <span className="text-ink-soft"> — {h.observacion}</span> : null}
+                        {h.observacion ? (
+                          <span className="inline-block max-w-xs break-words align-top text-ink-soft">
+                            {" "}
+                            — {h.observacion}
+                          </span>
+                        ) : null}
                       </span>
                     )}
                   </td>
