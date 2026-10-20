@@ -17,13 +17,26 @@ export async function registrarTemperaturaAction(
 
   const idPunto = Number(formData.get("idPunto"));
   const temperatura = Number(formData.get("temperatura"));
+  const idProd = Number(formData.get("idProd"));
+  const analisis = String(formData.get("analisis") ?? "");
+  const observacion = String(formData.get("observacion") ?? "");
 
-  if (!idPunto || Number.isNaN(temperatura)) {
+  if (!idPunto || String(formData.get("temperatura") ?? "").trim() === "" || Number.isNaN(temperatura)) {
     return { error: "Completá la temperatura." };
+  }
+  if (!idProd) {
+    return { error: "Elegí el sabor que medís." };
+  }
+  if (analisis !== "ok" && analisis !== "no_ok") {
+    return { error: "Indicá el análisis sensorial/visual: OK o No OK." };
   }
 
   try {
-    await registrarTemperatura(idPunto, temperatura, user.idUser);
+    await registrarTemperatura(idPunto, temperatura, user.idUser, {
+      idProd,
+      analisisOk: analisis === "ok",
+      observacion: observacion.trim() === "" ? null : observacion,
+    });
   } catch (err) {
     return { error: err instanceof Error ? err.message : "No se pudo registrar la temperatura." };
   }
