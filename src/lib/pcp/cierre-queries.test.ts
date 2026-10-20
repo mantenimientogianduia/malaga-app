@@ -858,24 +858,43 @@ describe("cierre queries — plan del día", () => {
   it("no incluye OPs canceladas ni de otras fechas", async () => {
     const e = await escenarioBasico();
     const r = await confirmarCierre(entradaCierre(e));
-    await query(`UPDATE malaga.f_ordenes_produccion SET estado = 'cancelada' WHERE id_op = $1`, [r.opsCoccion[0]]);
+    const otraFecha = await query<{ id_op: number }>(
+      `INSERT INTO malaga.f_ordenes_produccion (id_prod, cant_plan, fecha_plan, estado)
+       VALUES ($1, 12, '2030-01-03', 'planificada') RETURNING id_op`,
+      [e.pt.idProd]
+    );
+
+    // Antes de cancelar: el plan de hoy tiene la OP de fabricación del cierre y no la de otra fecha.
+    const antes = await getPlanDelDia("2030-01-02");
+    expect(antes.fabricar.map((o) => o.idOp)).toEqual([r.opsFabricacion[0]]);
+
+    // Cancelo tanto la OP de cocción (SEMI) como la de fabricación (PT).
+    await query(`UPDATE malaga.f_ordenes_produccion SET estado = 'cancelada' WHERE id_op = ANY($1::int[])`, [
+      [r.opsCoccion[0], r.opsFabricacion[0]],
+    ]);
 
     const plan = await getPlanDelDia("2030-01-02");
     expect(plan.cocinar).toEqual([]);
-    expect(plan.fabricar).toHaveLength(1);
+    expect(plan.fabricar).toEqual([]);
 
-    const otroDia = await getPlanDelDia("2030-01-09");
-    expect(otroDia.fabricar).toEqual([]);
+    const otroDia = await getPlanDelDia("2030-01-03");
+    expect(otroDia.fabricar).toHaveLength(1);
+    expect(otroDia.fabricar[0]).toMatchObject({ idOp: otraFecha.rows[0].id_op, cantPlan: 12 });
+    expect(otroDia.cocinar).toEqual([]);
     expect(otroDia.cierre).toBeNull();
   }, TIMEOUT_ESCENARIO);
 
   it("si se repitió el cierre, el descongelado sale del último cierre", async () => {
     const e = await escenarioBasico();
-    await confirmarCierre(entradaCierre(e));
-    await confirmarCierre(entradaCierre(e));
+    const primero = await confirmarCierre(entradaCierre(e));
+    // Necesidad de la base = 4. Con stock real 3: descongelar 3, faltante 1.
+    // Con stock real 1: descongelar 1, faltante 3.
+    const segundo = await confirmarCierre(entradaCierre(e, { stockReal: { [e.semi.idProd]: 1 } }));
+    expect(segundo.idCierre).toBeGreaterThan(primero.idCierre);
 
     const plan = await getPlanDelDia("2030-01-02");
-    expect(plan.descongelar).toHaveLength(1);
+    expect(plan.cierre!.idCierre).toBe(segundo.idCierre);
+    expect(plan.descongelar).toEqual([{ idProd: e.semi.idProd, detalle: "Base Media", descongelar: 1, faltante: 3 }]);
     expect(plan.fabricar).toHaveLength(1);
   }, TIMEOUT_ESCENARIO);
 });
