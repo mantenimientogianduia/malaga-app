@@ -102,6 +102,12 @@ export function CierreDiaForm({ datos }: { datos: DatosCierre }) {
   const faltanPct = datos.bachasExhibidas.filter((b) => pcts[b.idPartida] === undefined).length;
   const faltanBases = datos.bases.filter((b) => !stockRealValido(stockReal[b.idProd])).length;
   const completo = faltanPct === 0 && faltanBases === 0;
+  const avisoFaltante = [
+    faltanPct > 0 ? `elegir el % de ${faltanPct} bacha${faltanPct === 1 ? "" : "s"}` : null,
+    faltanBases > 0 ? `cargar el stock real de ${faltanBases} base${faltanBases === 1 ? "" : "s"}` : null,
+  ]
+    .filter((t) => t !== null)
+    .join(" y ");
 
   const payload = JSON.stringify({
     ausentes: Array.from(ausentes),
@@ -472,8 +478,7 @@ export function CierreDiaForm({ datos }: { datos: DatosCierre }) {
         </button>
         {!completo && (
           <span id="cierre-faltan" className="text-xs text-ink-soft">
-            Falta elegir el % de {faltanPct} bacha{faltanPct === 1 ? "" : "s"} y cargar el stock real de {faltanBases}{" "}
-            base{faltanBases === 1 ? "" : "s"}.
+            Falta {avisoFaltante}.
           </span>
         )}
       </div>
