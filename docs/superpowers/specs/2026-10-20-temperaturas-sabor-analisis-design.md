@@ -42,11 +42,11 @@ ALTER TABLE malaga.f_registro_temperaturas
   ADD COLUMN analisis_ok BOOLEAN,
   ADD COLUMN observacion TEXT,
   ADD CONSTRAINT chk_registro_temperaturas_observacion
-    CHECK (analisis_ok IS DISTINCT FROM false OR length(btrim(observacion)) > 0);
+    CHECK (analisis_ok IS DISTINCT FROM false OR COALESCE(length(btrim(observacion)), 0) > 0);
 ```
 
 - Las tres columnas son nulas en los registros viejos; la obligatoriedad se exige en la aplicación (`registrarTemperatura`), no con `NOT NULL`.
-- El `CHECK` garantiza a nivel base que un registro con análisis No OK siempre tiene observación.
+- El `CHECK` garantiza a nivel base que un registro con análisis No OK siempre tiene observación. Se usa `COALESCE(...)` porque un `CHECK` que evalúa a NULL (observación nula) se considera cumplido en Postgres.
 - `registrarTemperatura(idPunto, temperatura, userRegistro, detalle)` recibe `{ idProd, analisisOk, observacion }`; el upsert por `(id_punto, fecha)` actualiza también esas columnas. Si `analisisOk` es true, la observación se guarda como NULL.
 - Nueva consulta `listSaboresExhibidos()` con `{ idProd, nroPosicion, detalle }` ordenados por posición.
 - `listPuntosConEstadoHoy`, `listHistorialReciente` y la lista de Auditoría devuelven los campos nuevos.
