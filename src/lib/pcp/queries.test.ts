@@ -282,6 +282,7 @@ describe("calcularPlanManana", () => {
     expect(fila.cantidadAPlanificar).toBe(4);
   });
 
+  // Timeout explícito: hace muchas consultas secuenciales contra la base remota y tarda más de 5 s.
   it("explota la receta activa y suma la demanda de la base entre todos los sabores que la usan", async () => {
     const userAlta = (
       await query<{ id_user: number }>(
@@ -307,7 +308,7 @@ describe("calcularPlanManana", () => {
     // Cada PT necesita 4kg (su stock mínimo, sin stock actual) -> 0.5 * 4 + 0.5 * 4 = 4kg de base.
     expect(filaSemi.demandaPronosticada).toBeCloseTo(4, 5);
     expect(filaSemi.tipoProducto).toBe("SEMI");
-  });
+  }, 30000);
 
   it("un sabor con cantidad_a_planificar 0 no le pide nada a sus bases", async () => {
     const userAlta = (
