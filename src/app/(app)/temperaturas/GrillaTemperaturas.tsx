@@ -27,7 +27,8 @@ function Celda({ punto, onTap }: { punto?: PuntoConEstadoHoy; onTap?: (idPunto: 
           title="Análisis No OK"
           className="absolute right-1 top-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-bad text-[9px] font-bold text-white"
         >
-          !
+          <span aria-hidden="true">!</span>
+          <span className="sr-only">Análisis No OK</span>
         </span>
       )}
     </button>
@@ -113,7 +114,7 @@ export function GrillaTemperaturas({
           className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4"
           onClick={() => setAbiertoId(null)}
         >
-          <div className="w-full max-w-sm card p-5" onClick={(e) => e.stopPropagation()}>
+          <div className="w-full max-w-sm card max-h-[calc(100dvh-2rem)] overflow-y-auto p-5" onClick={(e) => e.stopPropagation()}>
             <div className="mb-3 flex items-start justify-between">
               <div>
                 <p className="page-eyebrow mb-1">{abierto.detalle}</p>
@@ -165,7 +166,7 @@ export function GrillaTemperaturas({
                   {abierto.analisisOkHoy === false && (
                     <p>
                       <span className="text-ink-soft">Observación: </span>
-                      {abierto.observacionHoy}
+                      <span className="break-words">{abierto.observacionHoy}</span>
                     </p>
                   )}
                 </div>

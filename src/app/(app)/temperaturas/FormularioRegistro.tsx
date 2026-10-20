@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { startTransition, useState } from "react";
 import type { PuntoConEstadoHoy, SaborExhibido } from "@/lib/temperaturas/queries";
 import {
   PASO_TEMPERATURA,
@@ -42,8 +42,20 @@ export function FormularioRegistro({
   const completo =
     idProd !== "" && valor !== null && analisis !== null && (analisis === "ok" || observacion.trim() !== "");
 
+  const pasoTexto = String(PASO_TEMPERATURA).replace(".", ",");
+
+  // No se usa <form action={...}>: React 19 resetea el formulario al terminar la
+  // acción (incluso con error) y se perdería lo cargado. Se envía a mano dentro
+  // de una transición, así el estado controlado y el DOM siguen sincronizados.
+  const onSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!completo || pending) return;
+    const fd = new FormData(e.currentTarget);
+    startTransition(() => formAction(fd));
+  };
+
   return (
-    <form action={formAction} className="flex flex-col gap-3">
+    <form onSubmit={onSubmit} className="flex flex-col gap-3">
       <input type="hidden" name="idPunto" value={punto.idPunto} />
       <input type="hidden" name="analisis" value={analisis ?? ""} />
 
@@ -54,7 +66,7 @@ export function FormularioRegistro({
           required
           value={idProd}
           onChange={(e) => setIdProd(e.target.value)}
-          className="rounded-md border border-border bg-surface-raised px-3 py-2"
+          className="rounded-md border border-border bg-surface-raised px-3 py-2 text-base sm:text-sm"
         >
           <option value="">Elegí el sabor que medís...</option>
           {sabores.map((s) => (
@@ -66,17 +78,18 @@ export function FormularioRegistro({
       </label>
 
       <div className="flex flex-col gap-1 text-sm text-ink">
-        Temperatura (°C)
+        <label htmlFor="temperatura-registro">Temperatura (°C)</label>
         <div className="flex items-stretch gap-2">
           <button
             type="button"
-            aria-label={`Bajar ${PASO_TEMPERATURA} grados`}
+            aria-label={`Bajar ${pasoTexto} grados`}
             onClick={() => mover(-PASO_TEMPERATURA)}
             className="h-11 w-11 flex-none rounded-md border border-border text-lg font-semibold text-ink transition-colors hover:border-copper hover:text-copper"
           >
             −
           </button>
           <input
+            id="temperatura-registro"
             name="temperatura"
             type="number"
             step="0.1"
@@ -87,7 +100,7 @@ export function FormularioRegistro({
           />
           <button
             type="button"
-            aria-label={`Subir ${PASO_TEMPERATURA} grados`}
+            aria-label={`Subir ${pasoTexto} grados`}
             onClick={() => mover(PASO_TEMPERATURA)}
             className="h-11 w-11 flex-none rounded-md border border-border text-lg font-semibold text-ink transition-colors hover:border-copper hover:text-copper"
           >
@@ -101,12 +114,12 @@ export function FormularioRegistro({
 
       <div className="flex flex-col gap-1 text-sm text-ink">
         Análisis sensorial / visual
-        <div className="flex gap-2">
+        <div role="group" aria-label="Análisis sensorial / visual" className="flex gap-2">
           <button
             type="button"
             aria-pressed={analisis === "ok"}
             onClick={() => setAnalisis("ok")}
-            className={`flex-1 rounded-md border px-3 py-2 text-sm font-semibold transition-colors ${
+            className={`min-h-11 flex-1 rounded-md border px-3 py-2 text-sm font-semibold transition-colors ${
               analisis === "ok"
                 ? "border-ok bg-ok-tint text-ok"
                 : "border-border text-ink hover:border-ok hover:text-ok"
@@ -118,7 +131,7 @@ export function FormularioRegistro({
             type="button"
             aria-pressed={analisis === "no_ok"}
             onClick={() => setAnalisis("no_ok")}
-            className={`flex-1 rounded-md border px-3 py-2 text-sm font-semibold transition-colors ${
+            className={`min-h-11 flex-1 rounded-md border px-3 py-2 text-sm font-semibold transition-colors ${
               analisis === "no_ok"
                 ? "border-bad bg-bad-tint text-bad"
                 : "border-border text-ink hover:border-bad hover:text-bad"
@@ -139,7 +152,7 @@ export function FormularioRegistro({
             value={observacion}
             onChange={(e) => setObservacion(e.target.value)}
             placeholder="¿Qué observaste?"
-            className="rounded-md border border-border bg-surface-raised px-3 py-2"
+            className="rounded-md border border-border bg-surface-raised px-3 py-2 text-base sm:text-sm"
           />
         </label>
       )}
@@ -149,7 +162,7 @@ export function FormularioRegistro({
       <button
         type="submit"
         disabled={pending || !completo}
-        className="self-start rounded-md bg-copper px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+        className="min-h-11 self-start rounded-md bg-copper px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
       >
         {pending ? "Guardando..." : "Guardar"}
       </button>
