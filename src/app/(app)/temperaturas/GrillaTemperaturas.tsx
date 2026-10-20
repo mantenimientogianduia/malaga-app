@@ -2,7 +2,8 @@
 
 import { useActionState, useState } from "react";
 import { registrarTemperaturaAction } from "./actions";
-import type { PuntoConEstadoHoy } from "@/lib/temperaturas/queries";
+import type { PuntoConEstadoHoy, SaborExhibido } from "@/lib/temperaturas/queries";
+import { FormularioRegistro } from "./FormularioRegistro";
 
 function Celda({ punto, onTap }: { punto?: PuntoConEstadoHoy; onTap?: (idPunto: number) => void }) {
   if (!punto) {
@@ -12,7 +13,7 @@ function Celda({ punto, onTap }: { punto?: PuntoConEstadoHoy; onTap?: (idPunto: 
     <button
       type="button"
       onClick={() => onTap?.(punto.idPunto)}
-      className={`flex h-12 items-center justify-center rounded-md border text-xs font-semibold transition-colors ${
+      className={`relative flex h-12 items-center justify-center rounded-md border text-xs font-semibold transition-colors ${
         punto.registradoHoy
           ? punto.fueraDeRangoHoy
             ? "border-bad bg-bad-tint text-bad"
@@ -21,6 +22,14 @@ function Celda({ punto, onTap }: { punto?: PuntoConEstadoHoy; onTap?: (idPunto: 
       }`}
     >
       {punto.registradoHoy ? `${punto.temperaturaHoy}°` : "Medir"}
+      {punto.analisisOkHoy === false && (
+        <span
+          title="Análisis No OK"
+          className="absolute right-1 top-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-bad text-[9px] font-bold text-white"
+        >
+          !
+        </span>
+      )}
     </button>
   );
 }
@@ -66,11 +75,13 @@ function ExhibidoraGrid({
 
 export function GrillaTemperaturas({
   puntos,
+  sabores,
   tempMin,
   tempMax,
   cerrado,
 }: {
   puntos: PuntoConEstadoHoy[];
+  sabores: SaborExhibido[];
   tempMin: string;
   tempMax: string;
   cerrado: boolean;
@@ -122,40 +133,42 @@ export function GrillaTemperaturas({
             </div>
 
             {mostrarForm ? (
-              <form key={abierto.idPunto} action={formAction} className="flex flex-col gap-3">
-                <input type="hidden" name="idPunto" value={abierto.idPunto} />
-                <label className="flex flex-col gap-1 text-sm text-ink">
-                  Temperatura (°C)
-                  <input
-                    name="temperatura"
-                    type="number"
-                    step="0.1"
-                    required
-                    autoFocus
-                    defaultValue={abierto.temperaturaHoy ?? ""}
-                    className="rounded-md border border-border bg-surface-raised px-3 py-2"
-                  />
-                </label>
-                <p className="text-[11px] text-ink-soft">
-                  Rango normal: {tempMin}°C a {tempMax}°C
-                </p>
-                {state?.error && <p className="text-sm text-bad">{state.error}</p>}
-                <button
-                  type="submit"
-                  disabled={pending}
-                  className="self-start rounded-md bg-copper px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
-                >
-                  {pending ? "Guardando..." : "Guardar"}
-                </button>
-              </form>
+              <FormularioRegistro
+                key={abierto.idPunto}
+                punto={abierto}
+                sabores={sabores}
+                tempMin={tempMin}
+                tempMax={tempMax}
+                error={state?.error}
+                pending={pending}
+                formAction={formAction}
+              />
             ) : abierto.registradoHoy ? (
-              <div
-                className={`rounded-lg p-3 text-sm ${
-                  abierto.fueraDeRangoHoy ? "bg-bad-tint text-bad" : "bg-ok-tint text-ok"
-                }`}
-              >
-                {abierto.temperaturaHoy}°C
-                {abierto.fueraDeRangoHoy ? " — fuera del rango normal" : " — dentro del rango normal"}
+              <div className="flex flex-col gap-2">
+                <div
+                  className={`rounded-lg p-3 text-sm ${
+                    abierto.fueraDeRangoHoy ? "bg-bad-tint text-bad" : "bg-ok-tint text-ok"
+                  }`}
+                >
+                  {abierto.temperaturaHoy}°C
+                  {abierto.fueraDeRangoHoy ? " — fuera del rango normal" : " — dentro del rango normal"}
+                </div>
+                <div className="flex flex-col gap-0.5 text-sm text-ink">
+                  <p>
+                    <span className="text-ink-soft">Sabor: </span>
+                    {abierto.saborHoy ?? "—"}
+                  </p>
+                  <p>
+                    <span className="text-ink-soft">Análisis: </span>
+                    {abierto.analisisOkHoy === null ? "—" : abierto.analisisOkHoy ? "OK" : "No OK"}
+                  </p>
+                  {abierto.analisisOkHoy === false && (
+                    <p>
+                      <span className="text-ink-soft">Observación: </span>
+                      {abierto.observacionHoy}
+                    </p>
+                  )}
+                </div>
               </div>
             ) : (
               <p className="rounded-lg bg-surface-raised p-3 text-sm text-ink-soft">

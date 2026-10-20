@@ -5,6 +5,7 @@ import {
   listHistorialReciente,
   getResumen30Dias,
   getCierreHoy,
+  listSaboresExhibidos,
 } from "@/lib/temperaturas/queries";
 import { formatFechaHora } from "@/lib/formatDate";
 import { IconThermometer } from "@/components/icons";
@@ -16,11 +17,12 @@ export default async function TemperaturasPage() {
   const user = await requireRole(["gestion", "admin", "produccion"]);
 
   const config = await getConfigTemperaturas();
-  const [puntos, historial, resumen, cierre] = await Promise.all([
+  const [puntos, historial, resumen, cierre, sabores] = await Promise.all([
     listPuntosConEstadoHoy(config),
     listHistorialReciente(config),
     getResumen30Dias(config),
     getCierreHoy(),
+    listSaboresExhibidos(),
   ]);
 
   const puedeEditarRango = user.rol === "gestion" || user.rol === "admin";
@@ -50,7 +52,13 @@ export default async function TemperaturasPage() {
 
       <CierreDiaControls cierre={cierre} puedeReabrir={puedeEditarRango} completos={completos} total={puntos.length} />
 
-      <GrillaTemperaturas puntos={puntos} tempMin={config.tempMin} tempMax={config.tempMax} cerrado={cierre !== null} />
+      <GrillaTemperaturas
+        puntos={puntos}
+        sabores={sabores}
+        tempMin={config.tempMin}
+        tempMax={config.tempMax}
+        cerrado={cierre !== null}
+      />
 
       <div className="mt-8">
         <h2 className="mb-3 text-sm font-semibold text-ink">Promedio y desvíos (últimos 30 días)</h2>
