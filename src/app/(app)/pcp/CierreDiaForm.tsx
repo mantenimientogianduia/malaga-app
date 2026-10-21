@@ -206,7 +206,7 @@ export function CierreDiaForm({ datos }: { datos: DatosCierre }) {
                       key={p}
                       type="button"
                       aria-pressed={pcts[b.idPartida] === p}
-                      onClick={() => setPcts({ ...pcts, [b.idPartida]: p })}
+                      onClick={() => setPcts((prev) => ({ ...prev, [b.idPartida]: p }))}
                       className={`min-h-9 rounded-md border px-3 text-xs font-semibold transition-colors ${
                         pcts[b.idPartida] === p
                           ? "border-copper bg-copper text-white"
@@ -256,7 +256,10 @@ export function CierreDiaForm({ datos }: { datos: DatosCierre }) {
                           max="100000000"
                           aria-label={`Stock real de ${b.detalle}`}
                           value={real ?? ""}
-                          onChange={(e) => setStockReal({ ...stockReal, [b.idProd]: e.target.value })}
+                          onChange={(e) => {
+                            const valor = e.target.value;
+                            setStockReal((prev) => ({ ...prev, [b.idProd]: valor }));
+                          }}
                           className="w-24 rounded-md border border-border bg-surface-raised px-2 py-1 text-right font-mono text-base sm:text-sm"
                         />
                       </td>
@@ -325,7 +328,10 @@ export function CierreDiaForm({ datos }: { datos: DatosCierre }) {
                       aria-label={`Bachas de ${f.detalle}`}
                       placeholder={String(f.bachas)}
                       value={bachasEdit[f.idProd] ?? String(f.bachas)}
-                      onChange={(e) => setBachasEdit({ ...bachasEdit, [f.idProd]: e.target.value })}
+                      onChange={(e) => {
+                      const valor = e.target.value;
+                      setBachasEdit((prev) => ({ ...prev, [f.idProd]: valor }));
+                    }}
                       className="w-16 rounded-md border border-border bg-surface-raised px-2 py-1 text-right font-mono text-base disabled:opacity-50 sm:text-sm"
                     />
                     {editada && (
@@ -335,7 +341,7 @@ export function CierreDiaForm({ datos }: { datos: DatosCierre }) {
                         <button
                           type="button"
                           aria-label={`Restaurar las bachas calculadas de ${f.detalle}`}
-                          onClick={() => setBachasEdit(sinClave(bachasEdit, f.idProd))}
+                          onClick={() => setBachasEdit((prev) => sinClave(prev, f.idProd))}
                           className="font-semibold text-copper underline hover:text-copper-strong"
                         >
                           restaurar
@@ -422,7 +428,10 @@ export function CierreDiaForm({ datos }: { datos: DatosCierre }) {
                       aria-label={`Kg a cocinar de ${b.detalle}`}
                       placeholder={String(b.kgACocinar)}
                       value={cocinarEdit[b.idProd] ?? String(b.kgACocinar)}
-                      onChange={(e) => setCocinarEdit({ ...cocinarEdit, [b.idProd]: e.target.value })}
+                      onChange={(e) => {
+                      const valor = e.target.value;
+                      setCocinarEdit((prev) => ({ ...prev, [b.idProd]: valor }));
+                    }}
                       className="w-24 rounded-md border border-border bg-surface-raised px-2 py-1 text-right font-mono text-base sm:text-sm"
                     />
                     {editado && (
@@ -432,7 +441,7 @@ export function CierreDiaForm({ datos }: { datos: DatosCierre }) {
                         <button
                           type="button"
                           aria-label={`Restaurar los kg a cocinar calculados de ${b.detalle}`}
-                          onClick={() => setCocinarEdit(sinClave(cocinarEdit, b.idProd))}
+                          onClick={() => setCocinarEdit((prev) => sinClave(prev, b.idProd))}
                           className="font-semibold text-copper underline hover:text-copper-strong"
                         >
                           restaurar
