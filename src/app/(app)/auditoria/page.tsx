@@ -150,7 +150,7 @@ export default async function AuditoriaPage() {
         <section>
           <div className="mb-3 flex items-center gap-2">
             <IconFlask className="h-4 w-4 text-copper" />
-            <h2 className="text-sm font-semibold text-ink">Cierres de remanente recientes</h2>
+            <h2 className="text-sm font-semibold text-ink">Bajas de stock recientes</h2>
           </div>
           <div className="flex flex-col gap-2">
             {cierres.map((c) => (
@@ -161,6 +161,11 @@ export default async function AuditoriaPage() {
                     {MOTIVO_LABEL[c.motivoBaja]} · {formatFechaHora(c.tsBajaManual)}
                     {c.userBajaManual ? ` · ${c.userBajaManual}` : ""}
                   </div>
+                  {c.observacion && (
+                    <div className="line-clamp-2 break-words text-[10.5px] text-ink-soft" title={c.observacion}>
+                      {c.observacion}
+                    </div>
+                  )}
                 </div>
                 <form action={deshacerCierreAction} className="flex-none">
                   <input type="hidden" name="idPartida" value={c.idPartida} />
@@ -174,7 +179,7 @@ export default async function AuditoriaPage() {
               </div>
             ))}
             {cierres.length === 0 && (
-              <p className="card py-6 text-center text-sm text-ink-soft">Sin cierres registrados.</p>
+              <p className="card py-6 text-center text-sm text-ink-soft">Sin bajas registradas.</p>
             )}
           </div>
         </section>
