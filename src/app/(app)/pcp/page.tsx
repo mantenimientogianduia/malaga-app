@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { requireRole } from "@/lib/auth/requireRole";
 import { getDatosCierre } from "@/lib/pcp/cierre-queries";
+import { mananaEnMalaga } from "@/lib/pcp/fechas";
 import { CierreDiaForm } from "./CierreDiaForm";
 import { ConfigTab } from "./ConfigTab";
 import { EstadisticasTab } from "./EstadisticasTab";
@@ -27,7 +28,7 @@ export default async function PcpPage({ searchParams }: { searchParams: Promise<
       <PcpTabs activa={activa} esGestion={esGestion} />
 
       <div className="mt-5">
-        {activa === "cierre" && <CierreDiaForm datos={await getDatosCierre()} />}
+        {activa === "cierre" && <CierreDiaForm datos={await getDatosCierre(mananaEnMalaga())} />}
         {activa === "plan" && <PlanDelDiaTab />}
         {activa === "config" && <ConfigTab />}
         {activa === "estadisticas" && <EstadisticasTab />}
