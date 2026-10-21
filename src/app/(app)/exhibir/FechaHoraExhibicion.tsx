@@ -16,7 +16,9 @@ export function FechaHoraExhibicion() {
   const [valor, setValor] = useState("");
 
   const fecha = editando && valor !== "" ? new Date(valor) : null;
-  const iso = fecha !== null && !Number.isNaN(fecha.getTime()) ? fecha.toISOString() : "";
+  // Editando con un valor inválido (p. ej. año de 5 dígitos) se manda un marcador que el servidor rechaza,
+  // para no exhibir con la hora actual sin avisar.
+  const iso = !editando ? "" : fecha && !Number.isNaN(fecha.getTime()) ? fecha.toISOString() : "invalida";
 
   return (
     <div className="flex flex-col gap-1 text-[11px] text-ink-soft">
@@ -27,6 +29,7 @@ export function FechaHoraExhibicion() {
           <input
             type="datetime-local"
             required
+            autoFocus
             aria-label="Fecha y hora de la exhibición"
             value={valor}
             onChange={(e) => setValor(e.target.value)}
@@ -38,7 +41,7 @@ export function FechaHoraExhibicion() {
               setEditando(false);
               setValor("");
             }}
-            className="font-medium text-copper hover:text-copper-strong"
+            className="px-1 py-2 font-medium text-copper hover:text-copper-strong"
           >
             Usar ahora
           </button>
@@ -52,7 +55,7 @@ export function FechaHoraExhibicion() {
               setValor(aInputLocal(new Date()));
               setEditando(true);
             }}
-            className="font-medium text-copper hover:text-copper-strong"
+            className="px-1 py-2 font-medium text-copper hover:text-copper-strong"
           >
             Cambiar
           </button>

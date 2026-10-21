@@ -17,9 +17,13 @@ export function FormularioExhibir({
 }) {
   const [state, formAction, pending] = useActionState(exhibirPartidaAction, undefined);
   const [marcarUltima, setMarcarUltima] = useState(false);
+  // Resultado cuyo error el usuario ya "descartó" al tocar un campo; un resultado nuevo es otro objeto y vuelve a mostrarse.
+  const [descartado, setDescartado] = useState(state);
+  const errorVisible = state?.error && state !== descartado ? state.error : null;
 
   return (
     <form
+      onChange={() => setDescartado(state)}
       onSubmit={(e) => {
         // Sin <form action>: React 19 resetearía los campos al terminar, también con error.
         e.preventDefault();
@@ -52,9 +56,9 @@ export function FormularioExhibir({
 
       <FechaHoraExhibicion />
 
-      {state?.error && (
+      {errorVisible && (
         <p role="alert" className="rounded-lg bg-bad-tint px-2.5 py-1.5 text-[11px] font-medium text-bad">
-          {state.error}
+          {errorVisible}
         </p>
       )}
 
