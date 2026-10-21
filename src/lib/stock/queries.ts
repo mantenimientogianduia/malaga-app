@@ -124,6 +124,7 @@ export interface CierreReciente {
   motivoBaja: MotivoBaja;
   tsBajaManual: string;
   userBajaManual: string | null;
+  observacion: string | null;
 }
 
 export async function listCierresRecientes(limite = 15): Promise<CierreReciente[]> {
@@ -134,9 +135,11 @@ export async function listCierresRecientes(limite = 15): Promise<CierreReciente[
     motivo_baja_manual: MotivoBaja;
     ts_baja_manual: string;
     user_baja_manual: string | null;
+    observacion: string | null;
   }>(
     `SELECT ps.id_partistock, p.detalle AS producto_detalle, ps.lote, ps.motivo_baja_manual,
-            ps.ts_baja_manual::text AS ts_baja_manual, u.email AS user_baja_manual
+            ps.ts_baja_manual::text AS ts_baja_manual, u.email AS user_baja_manual,
+            ps.obs_baja_manual AS observacion
      FROM malaga.f_partidas_stock ps
      JOIN malaga.d_productos p ON p.id_prod = ps.id_prod
      LEFT JOIN malaga.usuarios u ON u.id_user = ps.user_baja_manual
@@ -152,13 +155,14 @@ export async function listCierresRecientes(limite = 15): Promise<CierreReciente[
     motivoBaja: r.motivo_baja_manual,
     tsBajaManual: r.ts_baja_manual,
     userBajaManual: r.user_baja_manual,
+    observacion: r.observacion,
   }));
 }
 
 export async function deshacerCierreRemanente(idPartida: number): Promise<void> {
   await query(
     `UPDATE malaga.f_partidas_stock
-     SET ts_baja_manual = NULL, motivo_baja_manual = NULL, user_baja_manual = NULL
+     SET ts_baja_manual = NULL, motivo_baja_manual = NULL, obs_baja_manual = NULL, user_baja_manual = NULL
      WHERE id_partistock = $1`,
     [idPartida]
   );

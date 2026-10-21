@@ -1,4 +1,6 @@
 import { query, withTransaction } from "../db";
+import type { MotivoBaja } from "../stock/queries";
+import { fechaEnMalaga } from "../pcp/fechas";
 
 export interface CartillaSlot {
   idExhibidora: number;
@@ -138,15 +140,38 @@ export async function exhibirPartida(
   idPartida: number,
   idExhibidora: number,
   userExhibicion: number,
-  oficializarCambioAhora = false
+  oficializarCambioAhora = false,
+  tsExhibicion?: string | null
 ): Promise<void> {
+  const ts = tsExhibicion ? new Date(tsExhibicion) : null;
+  if (ts !== null && Number.isNaN(ts.getTime())) {
+    throw new Error("La fecha y hora de exhibición no son válidas.");
+  }
+  // 1 minuto de tolerancia por si el reloj del dispositivo va levemente adelantado.
+  if (ts !== null && ts.getTime() > Date.now() + 60_000) {
+    throw new Error("La fecha y hora de exhibición no pueden ser futuras.");
+  }
+  const tsParam = ts === null ? null : ts.toISOString();
+
   await withTransaction(async (client) => {
+    const previa = await client.query<{ fecha_fab: string; ts_baja_manual: string | null }>(
+      `SELECT fecha_fab::text AS fecha_fab, ts_baja_manual::text AS ts_baja_manual
+       FROM malaga.f_partidas_stock WHERE id_partistock = $1 FOR UPDATE`,
+      [idPartida]
+    );
+    const fila = previa.rows[0];
+    if (!fila) throw new Error("La bacha no existe.");
+    if (fila.ts_baja_manual !== null) throw new Error("Esa bacha está dada de baja y no se puede exhibir.");
+    if (ts !== null && fechaEnMalaga(ts) < fila.fecha_fab) {
+      throw new Error("La exhibición no puede ser anterior al día de fabricación de la bacha.");
+    }
+
     const partidaResult = await client.query<{ id_prod: number }>(
       `UPDATE malaga.f_partidas_stock
-       SET ts_exhibicion = now(), id_exhibidora = $2, user_exhibicion = $3
+       SET ts_exhibicion = COALESCE($4::timestamptz, now()), id_exhibidora = $2, user_exhibicion = $3
        WHERE id_partistock = $1
        RETURNING id_prod`,
-      [idPartida, idExhibidora, userExhibicion]
+      [idPartida, idExhibidora, userExhibicion, tsParam]
     );
     const idProd = partidaResult.rows[0].id_prod;
 
@@ -160,11 +185,12 @@ export async function exhibirPartida(
       );
     }
 
+    // El quiebre se cierra en el momento de la exhibición, pero nunca antes de que haya empezado.
     await client.query(
       `UPDATE malaga.f_quiebres
-       SET ts_repuesto = now(), id_partida_repuso = $2
+       SET ts_repuesto = GREATEST(ts_quiebre_real, COALESCE($3::timestamptz, now())), id_partida_repuso = $2
        WHERE id_prod = $1 AND ts_repuesto IS NULL`,
-      [idProd, idPartida]
+      [idProd, idPartida, tsParam]
     );
   });
 }
@@ -214,4 +240,32 @@ export async function deshacerExhibicion(idPartida: number): Promise<void> {
      WHERE id_partistock = $1`,
     [idPartida]
   );
+}
+
+// Baja manual de una bacha de PT que nunca se exhibió (descarte, vencimiento o ajuste de stock).
+export async function darDeBajaBachaPt(
+  idPartida: number,
+  motivo: MotivoBaja,
+  observacion: string,
+  userBaja: number
+): Promise<void> {
+  if (!["scrap", "vencido", "ajuste"].includes(motivo)) {
+    throw new Error("Elegí el motivo de la baja.");
+  }
+  const obs = observacion.trim();
+  if (obs === "") {
+    throw new Error("Escribí la observación de la baja.");
+  }
+
+  const result = await query(
+    `UPDATE malaga.f_partidas_stock ps
+     SET ts_baja_manual = now(), motivo_baja_manual = $2, obs_baja_manual = $3, user_baja_manual = $4
+     FROM malaga.d_productos p
+     WHERE ps.id_partistock = $1 AND p.id_prod = ps.id_prod AND p.tipo_producto = 'PT'
+       AND ps.ts_exhibicion IS NULL AND ps.ts_baja_manual IS NULL`,
+    [idPartida, motivo, obs, userBaja]
+  );
+  if (result.rowCount === 0) {
+    throw new Error("No se pudo dar de baja: la bacha ya fue exhibida o dada de baja.");
+  }
 }
