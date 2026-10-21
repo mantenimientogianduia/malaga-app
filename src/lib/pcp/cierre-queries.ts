@@ -269,8 +269,6 @@ export interface ConfirmarCierreInput {
   fecha: string;
   fechaPlan: string;
   userCierre: number;
-  // Bachas del obrador que el usuario destildó (no están físicamente).
-  ausentes: number[];
   pctBachas: { idPartida: number; pct: number }[];
   stockReal: Record<number, number>;
   bachasOverride: Record<number, number>;
@@ -306,7 +304,6 @@ function validarEntrada(input: ConfirmarCierreInput): void {
   if (!fechaValida(input.fechaPlan)) throw new Error("La fecha del plan no es válida.");
   if (!fechaValida(input.fecha)) throw new Error("La fecha del cierre no es válida.");
   if (
-    !Array.isArray(input.ausentes) ||
     !Array.isArray(input.pctBachas) ||
     !esRegistro(input.stockReal) ||
     !esRegistro(input.bachasOverride) ||
@@ -325,17 +322,16 @@ function validarEntrada(input: ConfirmarCierreInput): void {
   }
 }
 
-// Stock de PT por sabor: obrador (sin las bachas destildadas) + exhibida ponderada por su %.
+// Stock de PT por sabor: obrador + exhibida ponderada por su %.
 function armarStockSabores(
   datos: DatosCierre,
-  ausentes: Set<number>,
   pctPorPartida: Map<number, number>
 ): Record<number, StockSabor> {
   const stockSabores: Record<number, StockSabor> = {};
   const stockDe = (idProd: number): StockSabor =>
     (stockSabores[idProd] ??= { kgObrador: 0, kgExhibidaPonderada: 0 });
   for (const b of datos.bachasObrador) {
-    if (!ausentes.has(b.idPartida)) stockDe(b.idProd).kgObrador += b.cantidad;
+    stockDe(b.idProd).kgObrador += b.cantidad;
   }
   for (const b of datos.bachasExhibidas) {
     stockDe(b.idProd).kgExhibidaPonderada += (b.cantidad * (pctPorPartida.get(b.idPartida) as number)) / 100;
@@ -407,8 +403,6 @@ export async function confirmarCierre(input: ConfirmarCierreInput): Promise<Resu
       throw new Error("Falta cargar el stock real de todas las bases.");
     }
 
-    const idsObrador = new Set(datos.bachasObrador.map((b) => b.idPartida));
-    const ausentes = new Set(input.ausentes.filter((id) => idsObrador.has(id)));
     // Se redondea a 3 decimales como la columna NUMERIC(12,3): lo que se calcula es lo que se guarda.
     const stockReal = (idProd: number) => Math.round(input.stockReal[idProd] * 1000) / 1000;
 
@@ -416,7 +410,7 @@ export async function confirmarCierre(input: ConfirmarCierreInput): Promise<Resu
       margenPct: datos.margenPct,
       diasCobertura: datos.diasCobertura,
       sabores: datos.sabores,
-      stockSabores: armarStockSabores(datos, ausentes, pctPorPartida as Map<number, number>),
+      stockSabores: armarStockSabores(datos, pctPorPartida as Map<number, number>),
       bases: datos.bases.map((b) => ({
         idProd: b.idProd,
         detalle: b.detalle,
@@ -429,18 +423,6 @@ export async function confirmarCierre(input: ConfirmarCierreInput): Promise<Resu
       cocinarOverride: input.cocinarOverride,
     });
     const teoricoPorBase = new Map(datos.bases.map((b) => [b.idProd, b.stockTeorico]));
-
-    if (ausentes.size > 0) {
-      const bajas = await client.query(
-        `UPDATE malaga.f_partidas_stock
-         SET ts_baja_manual = now(), motivo_baja_manual = 'ajuste', user_baja_manual = $2
-         WHERE id_partistock = ANY($1::int[]) AND ts_exhibicion IS NULL AND ts_baja_manual IS NULL`,
-        [Array.from(ausentes), input.userCierre]
-      );
-      if (bajas.rowCount !== ausentes.size) {
-        throw new Error("Cambió el estado de las bachas del obrador; volvé a cargar el cierre.");
-      }
-    }
 
     // clock_timestamp() (y no now()) para que el orden de ts_cierre coincida con el orden de commit.
     const cierre = await client.query<{ id_cierre: number }>(

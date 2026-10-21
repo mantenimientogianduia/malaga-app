@@ -42,7 +42,6 @@ function Seccion({ titulo, ayuda, children }: { titulo: string; ayuda: string; c
 
 export function CierreDiaForm({ datos }: { datos: DatosCierre }) {
   const [state, formAction, pending] = useActionState(confirmarCierreAction, undefined);
-  const [ausentes, setAusentes] = useState<Set<number>>(new Set());
   const [pcts, setPcts] = useState<Record<number, number>>({});
   const [stockReal, setStockReal] = useState<Record<number, string>>({});
   const [bachasEdit, setBachasEdit] = useState<Record<number, string>>({});
@@ -52,14 +51,14 @@ export function CierreDiaForm({ datos }: { datos: DatosCierre }) {
     const r: Record<number, StockSabor> = {};
     const de = (idProd: number) => (r[idProd] ??= { kgObrador: 0, kgExhibidaPonderada: 0 });
     for (const b of datos.bachasObrador) {
-      if (!ausentes.has(b.idPartida)) de(b.idProd).kgObrador += b.cantidad;
+      de(b.idProd).kgObrador += b.cantidad;
     }
     for (const b of datos.bachasExhibidas) {
       const pct = pcts[b.idPartida];
       if (pct !== undefined) de(b.idProd).kgExhibidaPonderada += (b.cantidad * pct) / 100;
     }
     return r;
-  }, [datos.bachasObrador, datos.bachasExhibidas, ausentes, pcts]);
+  }, [datos.bachasObrador, datos.bachasExhibidas, pcts]);
 
   const bachasOverride = useMemo(() => aNumeros(bachasEdit), [bachasEdit]);
   const cocinarOverride = useMemo(() => aNumeros(cocinarEdit), [cocinarEdit]);
@@ -110,7 +109,6 @@ export function CierreDiaForm({ datos }: { datos: DatosCierre }) {
     .join(" y ");
 
   const payload = JSON.stringify({
-    ausentes: Array.from(ausentes),
     pctBachas: Object.entries(pcts).map(([idPartida, pct]) => ({ idPartida: Number(idPartida), pct })),
     stockReal: Object.fromEntries(
       datos.bases.filter((b) => stockRealValido(stockReal[b.idProd])).map((b) => [b.idProd, Number(stockReal[b.idProd])])
@@ -154,7 +152,7 @@ export function CierreDiaForm({ datos }: { datos: DatosCierre }) {
 
       <Seccion
         titulo="1. Bachas del obrador"
-        ayuda="Bachas terminadas que todavía no salieron a la exhibidora. Destildá las que no estén físicamente."
+        ayuda="Bachas terminadas que todavía no salieron a la exhibidora. Se cuentan todas como stock."
       >
         {datos.bachasObrador.length === 0 ? (
           <p className="text-sm text-ink-soft">No hay bachas esperando en el obrador.</p>
@@ -163,29 +161,25 @@ export function CierreDiaForm({ datos }: { datos: DatosCierre }) {
             {Array.from(obradorPorSabor.entries()).map(([idProd, { detalle, bachas }]) => (
               <div key={idProd}>
                 <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-ink-soft">{detalle}</p>
-                <div className="flex flex-col gap-1">
+                <ul className="flex flex-col gap-1 text-sm text-ink">
                   {bachas.map((b) => (
-                    <label key={b.idPartida} className="flex items-center gap-2 text-sm text-ink">
-                      <input
-                        type="checkbox"
-                        className="h-5 w-5"
-                        checked={!ausentes.has(b.idPartida)}
-                        onChange={(e) => {
-                          const siguiente = new Set(ausentes);
-                          if (e.target.checked) siguiente.delete(b.idPartida);
-                          else siguiente.add(b.idPartida);
-                          setAusentes(siguiente);
-                        }}
-                      />
+                    <li key={b.idPartida} className="flex items-center gap-2">
                       <span className="font-mono">{fmt(b.cantidad)} kg</span>
                       <span className="text-ink-soft">lote {b.lote}</span>
-                    </label>
+                    </li>
                   ))}
-                </div>
+                </ul>
               </div>
             ))}
           </div>
         )}
+        <p className="mt-3 rounded-lg bg-warn-tint px-3 py-2 text-xs font-medium text-warn">
+          ¿Falta alguna bacha? Exhibila o dala de baja desde{" "}
+          <Link href="/exhibir" className="font-semibold underline">
+            Exhibir
+          </Link>{" "}
+          y volvé a cargar esta pantalla.
+        </p>
       </Seccion>
 
       <Seccion

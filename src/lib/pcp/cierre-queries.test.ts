@@ -504,7 +504,6 @@ function entradaCierre(
     fecha: "2030-01-01",
     fechaPlan: "2030-01-02",
     userCierre: e.userId,
-    ausentes: [],
     pctBachas: [{ idPartida: e.exhibida, pct: 50 }],
     stockReal: { [e.semi.idProd]: 3 },
     bachasOverride: {},
@@ -519,7 +518,6 @@ function entradaMinima(userId: number, parcial: Partial<ConfirmarCierreInput> = 
     fecha: "2030-01-01",
     fechaPlan: "2030-01-02",
     userCierre: userId,
-    ausentes: [],
     pctBachas: [],
     stockReal: {},
     bachasOverride: {},
@@ -528,19 +526,8 @@ function entradaMinima(userId: number, parcial: Partial<ConfirmarCierreInput> = 
   };
 }
 
-// Después de un cierre fallido no debe quedar nada: ni la baja de la bacha ni filas del cierre.
-async function expectSinCambios(idBachaObrador: number) {
-  const bacha = await query<{
-    ts_baja_manual: string | null;
-    motivo_baja_manual: string | null;
-    user_baja_manual: number | null;
-  }>(
-    `SELECT ts_baja_manual, motivo_baja_manual, user_baja_manual FROM malaga.f_partidas_stock WHERE id_partistock = $1`,
-    [idBachaObrador]
-  );
-  expect(bacha.rows[0].ts_baja_manual).toBeNull();
-  expect(bacha.rows[0].motivo_baja_manual).toBeNull();
-  expect(bacha.rows[0].user_baja_manual).toBeNull();
+// Después de un cierre fallido no debe quedar nada en las tablas del cierre ni en las OPs.
+async function expectSinCambios() {
   const tablas = [
     "f_cierre_dia",
     "f_cierre_dia_bacha",
@@ -628,26 +615,6 @@ describe("cierre queries — confirmar cierre", () => {
     expect(snapshot.rows).toHaveLength(2); // una fila por el sabor y otra por la base
   }, TIMEOUT_ESCENARIO);
 
-  it("las bachas del obrador destildadas quedan con baja por ajuste y no cuentan como stock", async () => {
-    const e = await escenarioBasico();
-
-    const r = await confirmarCierre(entradaCierre(e, { ausentes: [e.obrador] }));
-
-    const baja = await query<{ motivo_baja_manual: string; user_baja_manual: number }>(
-      `SELECT motivo_baja_manual, user_baja_manual FROM malaga.f_partidas_stock WHERE id_partistock = $1`,
-      [e.obrador]
-    );
-    expect(baja.rows[0].motivo_baja_manual).toBe("ajuste");
-    expect(baja.rows[0].user_baja_manual).toBe(e.userId);
-
-    // stock = 2 (solo 50% de la exhibida); necesario 10 -> 3 bachas = 12 kg
-    const op = await query<{ cant_plan: string }>(
-      `SELECT cant_plan FROM malaga.f_ordenes_produccion WHERE id_op = $1`,
-      [r.opsFabricacion[0]]
-    );
-    expect(Number(op.rows[0].cant_plan)).toBe(12);
-  }, TIMEOUT_ESCENARIO);
-
   it("repetir el cierre el mismo día no duplica OPs y mantiene el descongelado", async () => {
     const e = await escenarioBasico();
     await confirmarCierre(entradaCierre(e));
@@ -708,22 +675,21 @@ describe("cierre queries — confirmar cierre", () => {
 
   it("rechaza sin dejar cambios cuando la validación falla", async () => {
     const e = await escenarioBasico();
-    await expect(confirmarCierre(entradaCierre(e, { ausentes: [e.obrador], pctBachas: [] }))).rejects.toThrow();
-    await expectSinCambios(e.obrador);
+    await expect(confirmarCierre(entradaCierre(e, { pctBachas: [] }))).rejects.toThrow();
+    await expectSinCambios();
   }, TIMEOUT_ESCENARIO);
 
-  it("hace rollback de todo si falla DENTRO de la transacción (después de dar de baja una bacha)", async () => {
+  it("hace rollback de todo si falla DENTRO de la transacción (después de insertar el cierre y sus bachas)", async () => {
     const e = await escenarioBasico();
     // Una demanda enorme pasa todas las validaciones y desborda el NUMERIC(12,3) de la OP de fabricación:
-    // el error ocurre dentro de la transacción, después del UPDATE que da de baja la bacha ausente.
-    // (No sirve un userCierre inexistente: user_baja_manual también tiene FK y fallaría el propio UPDATE.)
+    // el error ocurre dentro de la transacción, después de insertar f_cierre_dia y f_cierre_dia_bacha.
     await setDemandaBase(e.pt.idProd, 900000000);
 
-    await expect(confirmarCierre(entradaCierre(e, { ausentes: [e.obrador] }))).rejects.toThrow(
+    await expect(confirmarCierre(entradaCierre(e))).rejects.toThrow(
       /overflow|out of range/i
     );
 
-    await expectSinCambios(e.obrador);
+    await expectSinCambios();
   }, TIMEOUT_ESCENARIO);
 
   it("dos cierres simultáneos no duplican las OPs", async () => {
@@ -744,19 +710,6 @@ describe("cierre queries — confirmar cierre", () => {
       expect(Number(b.descongelar)).toBe(3);
       expect(Number(b.faltante)).toBe(1);
     }
-  }, TIMEOUT_ESCENARIO);
-
-  it("ignora los ausentes que no son bachas del obrador (ya exhibidas o inexistentes)", async () => {
-    const e = await escenarioBasico();
-
-    const r = await confirmarCierre(entradaCierre(e, { ausentes: [e.exhibida, 999999999] }));
-
-    const baja = await query<{ ts_baja_manual: string | null }>(
-      `SELECT ts_baja_manual FROM malaga.f_partidas_stock WHERE id_partistock IN ($1, $2)`,
-      [e.exhibida, e.obrador]
-    );
-    expect(baja.rows.every((x) => x.ts_baja_manual === null)).toBe(true);
-    expect(r.opsFabricacion).toHaveLength(1);
   }, TIMEOUT_ESCENARIO);
 
   it("un sabor sin peso estándar queda fuera del plan: sin OP, pero con su fila en el cierre", async () => {
@@ -821,9 +774,8 @@ describe("cierre queries — validación de la entrada", () => {
     await expect(confirmarCierre(entradaMinima(1, parcial))).rejects.toThrow(mensaje);
   });
 
-  it("rechaza si ausentes o pctBachas no son listas", async () => {
+  it("rechaza si pctBachas no es una lista", async () => {
     const mensaje = "Los datos del cierre no son válidos.";
-    await expect(confirmarCierre(entradaMinima(1, { ausentes: "x" as unknown as number[] }))).rejects.toThrow(mensaje);
     await expect(confirmarCierre(entradaMinima(1, { pctBachas: null as unknown as [] }))).rejects.toThrow(mensaje);
   });
 });

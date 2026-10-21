@@ -6,7 +6,6 @@ import { confirmarCierre } from "@/lib/pcp/cierre-queries";
 import { fechaEnMalaga, mananaEnMalaga } from "@/lib/pcp/fechas";
 
 interface PayloadCierre {
-  ausentes: number[];
   pctBachas: { idPartida: number; pct: number }[];
   stockReal: Record<string, number>;
   bachasOverride: Record<string, number>;
@@ -41,7 +40,6 @@ export async function confirmarCierreAction(
       fecha: fechaEnMalaga(),
       fechaPlan: mananaEnMalaga(),
       userCierre: user.idUser,
-      ausentes: payload.ausentes ?? [],
       pctBachas: payload.pctBachas ?? [],
       stockReal: numerarClaves(payload.stockReal),
       bachasOverride: numerarClaves(payload.bachasOverride),
