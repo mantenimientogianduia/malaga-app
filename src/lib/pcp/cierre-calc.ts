@@ -1,4 +1,5 @@
 import { calcularCantidadAPlanificar } from "./forecast";
+import { pesosCobertura } from "./demanda";
 
 export interface ItemBase {
   idSubprod: number;
@@ -10,7 +11,11 @@ export interface SaborCierre {
   idProd: number;
   detalle: string;
   pesoEstandar: number | null;
+  // Demanda del día del plan en kg, sin margen.
   demandaBaseKgDia: number;
+  // Demanda sin margen (kg) de cada día de la ventana de cobertura, empezando por el día siguiente
+  // al del plan. Si falta, se asume la demanda del día del plan para todos los días.
+  demandaSiguientesKg?: number[];
   // kg de OPs de fabricación de este sabor ya pendientes (planificada / en_proceso).
   coccionesPendientes: number;
   items: ItemBase[];
@@ -95,9 +100,13 @@ export function calcularBases(args: {
   margenPct: number;
   diasCobertura: number;
 }): FilaBase[] {
+  const pesos = pesosCobertura(args.diasCobertura);
+  const factorMargen = 1 + args.margenPct / 100;
+
   return args.bases.map((base) => {
     let necesidad = 0;
-    let consumo = 0;
+    let consumoPlan = 0; // consumo del día del plan (para informar cuando no hay ventana)
+    let objetivoBruto = 0;
     for (const sabor of args.sabores) {
       const cantPorBacha = sabor.items
         .filter((i) => i.idSubprod === base.idProd)
@@ -105,15 +114,21 @@ export function calcularBases(args: {
       if (cantPorBacha === 0) continue;
       necesidad += cantPorBacha * (args.bachasMananaPorSabor.get(sabor.idProd) ?? 0);
       if (sabor.pesoEstandar && sabor.pesoEstandar > 0) {
-        consumo += (cantPorBacha * sabor.demandaBaseKgDia * (1 + args.margenPct / 100)) / sabor.pesoEstandar;
+        const kgBacha = (kg: number) => (cantPorBacha * kg * factorMargen) / (sabor.pesoEstandar as number);
+        consumoPlan += kgBacha(sabor.demandaBaseKgDia);
+        const porDia = sabor.demandaSiguientesKg ?? pesos.map(() => sabor.demandaBaseKgDia);
+        pesos.forEach((peso, k) => {
+          objetivoBruto += peso * kgBacha(porDia[k] ?? 0);
+        });
       }
     }
     const necesidadFabricacion = redondear3(necesidad);
-    const consumoDiario = redondear3(consumo);
+    const objetivo = redondear3(objetivoBruto);
+    // Con ventana: promedio de la ventana; sin ventana (0 días): el consumo del día del plan.
+    const consumoDiario = pesos.length > 0 ? redondear3(objetivo / args.diasCobertura) : redondear3(consumoPlan);
     const descongelar = redondear3(Math.min(necesidadFabricacion, base.stockReal));
     const faltante = redondear3(Math.max(necesidadFabricacion - base.stockReal, 0));
     const stockTrasManana = redondear3(base.stockReal - descongelar);
-    const objetivo = redondear3(consumoDiario * args.diasCobertura);
     const aReponer = redondear3(objetivo + faltante - stockTrasManana - base.coccionesPendientes);
     const kgACocinar = calcularCantidadAPlanificar({
       necesario: aReponer,

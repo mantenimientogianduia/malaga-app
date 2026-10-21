@@ -313,3 +313,85 @@ describe("calcularCierre", () => {
     }
   });
 });
+
+describe("calcularBases con demanda distinta por día", () => {
+  const conItem = (parcial: Partial<SaborCierre> = {}) =>
+    sabor({ items: [{ idSubprod: 100, cantSubprod: 2 }], ...parcial });
+
+  it("el objetivo suma el consumo esperado de cada día de la ventana", () => {
+    const filas = calcularBases({
+      sabores: [conItem({ demandaSiguientesKg: [10, 20] })],
+      bachasMananaPorSabor: new Map([[1, 0]]),
+      bases: [base({ stockReal: 0 })],
+      margenPct: 0,
+      diasCobertura: 2,
+    });
+    // día 1: 2 × 10 / 4 = 5; día 2: 2 × 20 / 4 = 10 -> objetivo 15, promedio 7,5
+    expect(filas[0].objetivo).toBeCloseTo(15, 5);
+    expect(filas[0].consumoDiario).toBeCloseTo(7.5, 5);
+    expect(filas[0].aReponer).toBeCloseTo(15, 5);
+  });
+
+  it("un último día fraccionario pesa solo la fracción", () => {
+    const filas = calcularBases({
+      sabores: [conItem({ demandaSiguientesKg: [10, 20] })],
+      bachasMananaPorSabor: new Map([[1, 0]]),
+      bases: [base({ stockReal: 0 })],
+      margenPct: 0,
+      diasCobertura: 1.5,
+    });
+    // 1 × 5 + 0,5 × 10 = 10
+    expect(filas[0].objetivo).toBeCloseTo(10, 5);
+  });
+
+  it("aplica el margen al consumo de cada día", () => {
+    const filas = calcularBases({
+      sabores: [conItem({ demandaSiguientesKg: [10, 20] })],
+      bachasMananaPorSabor: new Map([[1, 0]]),
+      bases: [base({ stockReal: 0 })],
+      margenPct: 20,
+      diasCobertura: 2,
+    });
+    expect(filas[0].objetivo).toBeCloseTo(18, 5); // 15 × 1,2
+  });
+
+  it("sin demandaSiguientesKg usa la demanda del día del plan para todos los días", () => {
+    const filas = calcularBases({
+      sabores: [conItem({ demandaBaseKgDia: 10 })],
+      bachasMananaPorSabor: new Map([[1, 0]]),
+      bases: [base({ stockReal: 0 })],
+      margenPct: 0,
+      diasCobertura: 3,
+    });
+    // 3 días × (2 × 10 / 4) = 15
+    expect(filas[0].objetivo).toBeCloseTo(15, 5);
+    expect(filas[0].consumoDiario).toBeCloseTo(5, 5);
+  });
+
+  it("con 0 días de cobertura no hay objetivo, pero el consumo diario sigue informado", () => {
+    const filas = calcularBases({
+      sabores: [conItem({ demandaBaseKgDia: 10 })],
+      bachasMananaPorSabor: new Map([[1, 0]]),
+      bases: [base({ stockReal: 0 })],
+      margenPct: 0,
+      diasCobertura: 0,
+    });
+    expect(filas[0].objetivo).toBe(0);
+    expect(filas[0].consumoDiario).toBeCloseTo(5, 5);
+  });
+
+  it("suma el consumo de varios sabores que usan la misma base, cada uno con sus días", () => {
+    const filas = calcularBases({
+      sabores: [
+        conItem({ idProd: 1, demandaSiguientesKg: [10, 20] }),
+        sabor({ idProd: 2, pesoEstandar: 5, items: [{ idSubprod: 100, cantSubprod: 1 }], demandaSiguientesKg: [5, 5] }),
+      ],
+      bachasMananaPorSabor: new Map([[1, 0], [2, 0]]),
+      bases: [base({ stockReal: 0 })],
+      margenPct: 0,
+      diasCobertura: 2,
+    });
+    // sabor 1: 5 + 10 = 15; sabor 2: 1 × 5 / 5 = 1 por día -> 2; total 17
+    expect(filas[0].objetivo).toBeCloseTo(17, 5);
+  });
+});
