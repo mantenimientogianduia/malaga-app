@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { exhibirPartidaAction } from "./actions";
+import { FormularioExhibir } from "./FormularioExhibir";
+import { BajaBacha } from "./BajaBacha";
 import { formatFecha } from "@/lib/formatDate";
 import type { CartillaSlot, PartidaEnObrador } from "@/lib/exhibidora/queries";
 
@@ -22,7 +23,6 @@ function BachasDeSabor({
   const sorted = [...partidas].sort((a, b) => a.fechaFab.localeCompare(b.fechaFab));
   const masVieja = sorted[0];
   const [selectedId, setSelectedId] = useState(masVieja?.idPartida);
-  const [marcarUltima, setMarcarUltima] = useState(false);
 
   const selected = sorted.find((p) => p.idPartida === selectedId) ?? masVieja;
   const incumpleFifo = !!selected && sorted.length > 1 && selected.idPartida !== masVieja.idPartida;
@@ -69,35 +69,21 @@ function BachasDeSabor({
         </p>
       )}
 
-      <form action={exhibirPartidaAction} className="flex flex-col gap-2">
-        <input type="hidden" name="idPartida" value={selected.idPartida} />
-        <input type="hidden" name="idExhibidora" value={idExhibidora} />
+      <FormularioExhibir
+        key={selected.idPartida}
+        idPartida={selected.idPartida}
+        idExhibidora={idExhibidora}
+        textoBoton={incumpleFifo ? "Exhibir de todos modos" : "Exhibir"}
+        checkboxUltimaBacha={checkboxUltimaBacha}
+      />
 
-        {checkboxUltimaBacha && (
-          <label className="flex items-start gap-2 text-[11px] text-ink-soft">
-            <input
-              type="checkbox"
-              name="oficializarCambioAhora"
-              checked={marcarUltima}
-              onChange={(e) => setMarcarUltima(e.target.checked)}
-              className="mt-0.5"
-            />
-            <span>
-              {checkboxUltimaBacha.label}
-              {checkboxUltimaBacha.hint && (
-                <span className="block text-ok">No quedan más bachas pendientes de este sabor.</span>
-              )}
-            </span>
-          </label>
-        )}
-
-        <button
-          type="submit"
-          className="self-start rounded-lg bg-copper px-3.5 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-copper-strong"
-        >
-          {incumpleFifo ? "Exhibir de todos modos" : "Exhibir"}
-        </button>
-      </form>
+      <div className="mt-2">
+        <BajaBacha
+          key={selected.idPartida}
+          idPartida={selected.idPartida}
+          descripcion={`${selected.cantidad} kg · ${formatFecha(selected.fechaFab)}`}
+        />
+      </div>
     </>
   );
 }

@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { exhibirPartidaAction } from "./actions";
+import { FormularioExhibir } from "./FormularioExhibir";
+import { BajaBacha } from "./BajaBacha";
 import { formatFecha } from "@/lib/formatDate";
 import type { PartidaEnObrador } from "@/lib/exhibidora/queries";
 
@@ -67,21 +68,25 @@ export function ExhibirGroup({
       )}
 
       {selected.idExhibidoraDestino ? (
-        <form action={exhibirPartidaAction}>
-          <input type="hidden" name="idPartida" value={selected.idPartida} />
-          <input type="hidden" name="idExhibidora" value={selected.idExhibidoraDestino} />
-          <button
-            type="submit"
-            className="rounded-lg bg-copper px-3.5 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-copper-strong"
-          >
-            {incumpleFifo ? "Exhibir de todos modos" : "Exhibir"}
-          </button>
-        </form>
+        <FormularioExhibir
+          key={selected.idPartida}
+          idPartida={selected.idPartida}
+          idExhibidora={selected.idExhibidoraDestino}
+          textoBoton={incumpleFifo ? "Exhibir de todos modos" : "Exhibir"}
+        />
       ) : (
         <span className="rounded-full bg-warn-tint px-2 py-0.5 text-[10px] font-semibold text-warn">
           Sin slot de exhibidora asignado
         </span>
       )}
+
+      <div className="mt-2">
+        <BajaBacha
+          key={selected.idPartida}
+          idPartida={selected.idPartida}
+          descripcion={`${selected.cantidad} kg · ${formatFecha(selected.fechaFab)}`}
+        />
+      </div>
     </div>
   );
 }
