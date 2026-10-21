@@ -144,6 +144,94 @@ describe("exhibirPartida con momento propio", () => {
     );
     expect(vigente.rows.map((r) => r.id_partistock)).toEqual([nueva]);
   }, TIMEOUT);
+
+  it("rechaza exhibir dos veces la misma bacha y no cambia lo ya registrado", async () => {
+    const s = await seed();
+    const otraPos = await query<{ id_exhibidora: number }>(
+      `INSERT INTO malaga.d_exhibidora (nro, id_prod) VALUES (2, $1) RETURNING id_exhibidora`,
+      [s.idProd]
+    );
+    const idPartida = await crearPartida(s.idProd);
+
+    await exhibirPartida(idPartida, s.idExhibidora, s.idUser, false, "2026-10-15T10:00:00Z");
+    await expect(
+      exhibirPartida(idPartida, otraPos.rows[0].id_exhibidora, s.idUser, false, "2026-10-10T10:00:00Z")
+    ).rejects.toThrow("Esa bacha ya fue exhibida.");
+
+    const r = await query<{ ok: boolean; id_exhibidora: number }>(
+      `SELECT ts_exhibicion = '2026-10-15T10:00:00Z'::timestamptz AS ok, id_exhibidora
+       FROM malaga.f_partidas_stock WHERE id_partistock = $1`,
+      [idPartida]
+    );
+    expect(r.rows[0]).toEqual({ ok: true, id_exhibidora: s.idExhibidora });
+  }, TIMEOUT);
+
+  it("exige un ISO con zona horaria y acepta uno con offset", async () => {
+    const s = await seed();
+    const idPartida = await crearPartida(s.idProd);
+
+    for (const invalido of ["2026-10-10T12:00", "2026-10-10", "October 5 2026"]) {
+      await expect(exhibirPartida(idPartida, s.idExhibidora, s.idUser, false, invalido)).rejects.toThrow(
+        "no son válidas"
+      );
+    }
+
+    await exhibirPartida(idPartida, s.idExhibidora, s.idUser, false, "2026-10-10T12:00:00+02:00");
+    const r = await query<{ ok: boolean }>(
+      `SELECT ts_exhibicion = '2026-10-10T10:00:00Z'::timestamptz AS ok FROM malaga.f_partidas_stock WHERE id_partistock = $1`,
+      [idPartida]
+    );
+    expect(r.rows[0].ok).toBe(true);
+  }, TIMEOUT);
+
+  it("acepta un momento 30 segundos en el futuro (tolerancia de reloj)", async () => {
+    const s = await seed();
+    const idPartida = await crearPartida(s.idProd);
+
+    await exhibirPartida(idPartida, s.idExhibidora, s.idUser, false, new Date(Date.now() + 30_000).toISOString());
+
+    const r = await query<{ ts_exhibicion: string | null }>(
+      `SELECT ts_exhibicion FROM malaga.f_partidas_stock WHERE id_partistock = $1`,
+      [idPartida]
+    );
+    expect(r.rows[0].ts_exhibicion).not.toBeNull();
+  }, TIMEOUT);
+
+  it("con oficializarCambioAhora y momento propio, ts_ulticambio queda con la hora actual", async () => {
+    const s = await seed();
+    const entrante = await createProducto({ detalle: "Chocolate", unidMed: "kg", tipoProducto: "PT", pesoEstandar: 4 });
+    await query(
+      `UPDATE malaga.d_exhibidora SET id_prod_fut = $2, ts_cambio_programado = CURRENT_DATE WHERE id_exhibidora = $1`,
+      [s.idExhibidora, entrante.idProd]
+    );
+    const idPartida = await crearPartida(entrante.idProd);
+
+    await exhibirPartida(idPartida, s.idExhibidora, s.idUser, true, "2026-10-10T12:00:00Z");
+
+    const r = await query<{ id_prod: number; id_prod_fut: number | null; cerca: boolean }>(
+      `SELECT id_prod, id_prod_fut, abs(extract(epoch FROM (now() - ts_ulticambio))) < 120 AS cerca
+       FROM malaga.d_exhibidora WHERE id_exhibidora = $1`,
+      [s.idExhibidora]
+    );
+    expect(r.rows[0]).toEqual({ id_prod: entrante.idProd, id_prod_fut: null, cerca: true });
+  }, TIMEOUT);
+
+  it("el quiebre cerrado guarda la bacha que repuso", async () => {
+    const s = await seed();
+    const idPartida = await crearPartida(s.idProd);
+    await query(
+      `INSERT INTO malaga.f_quiebres (id_prod, ts_quiebre_real, user_carga) VALUES ($1, '2026-10-08T10:00:00Z', $2)`,
+      [s.idProd, s.idUser]
+    );
+
+    await exhibirPartida(idPartida, s.idExhibidora, s.idUser, false, "2026-10-10T12:00:00Z");
+
+    const r = await query<{ id_partida_repuso: number }>(
+      `SELECT id_partida_repuso FROM malaga.f_quiebres WHERE id_prod = $1`,
+      [s.idProd]
+    );
+    expect(r.rows[0].id_partida_repuso).toBe(idPartida);
+  }, TIMEOUT);
 });
 
 describe("darDeBajaBachaPt", () => {

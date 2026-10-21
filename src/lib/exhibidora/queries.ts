@@ -136,6 +136,8 @@ export async function listPartidasEnObrador(): Promise<PartidaEnObrador[]> {
   }));
 }
 
+const ISO_CON_ZONA = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/;
+
 export async function exhibirPartida(
   idPartida: number,
   idExhibidora: number,
@@ -143,6 +145,10 @@ export async function exhibirPartida(
   oficializarCambioAhora = false,
   tsExhibicion?: string | null
 ): Promise<void> {
+  // Se exige ISO con zona: sin ella, Date interpretaría la hora en la zona del servidor.
+  if (tsExhibicion && !ISO_CON_ZONA.test(tsExhibicion)) {
+    throw new Error("La fecha y hora de exhibición no son válidas.");
+  }
   const ts = tsExhibicion ? new Date(tsExhibicion) : null;
   if (ts !== null && Number.isNaN(ts.getTime())) {
     throw new Error("La fecha y hora de exhibición no son válidas.");
@@ -154,14 +160,20 @@ export async function exhibirPartida(
   const tsParam = ts === null ? null : ts.toISOString();
 
   await withTransaction(async (client) => {
-    const previa = await client.query<{ fecha_fab: string; ts_baja_manual: string | null }>(
-      `SELECT fecha_fab::text AS fecha_fab, ts_baja_manual::text AS ts_baja_manual
+    const previa = await client.query<{
+      fecha_fab: string;
+      ts_baja_manual: string | null;
+      ts_exhibicion: string | null;
+    }>(
+      `SELECT fecha_fab::text AS fecha_fab, ts_baja_manual::text AS ts_baja_manual,
+              ts_exhibicion::text AS ts_exhibicion
        FROM malaga.f_partidas_stock WHERE id_partistock = $1 FOR UPDATE`,
       [idPartida]
     );
     const fila = previa.rows[0];
     if (!fila) throw new Error("La bacha no existe.");
     if (fila.ts_baja_manual !== null) throw new Error("Esa bacha está dada de baja y no se puede exhibir.");
+    if (fila.ts_exhibicion !== null) throw new Error("Esa bacha ya fue exhibida.");
     if (ts !== null && fechaEnMalaga(ts) < fila.fecha_fab) {
       throw new Error("La exhibición no puede ser anterior al día de fabricación de la bacha.");
     }
@@ -242,6 +254,8 @@ export async function deshacerExhibicion(idPartida: number): Promise<void> {
   );
 }
 
+const MOTIVOS_BAJA = ["scrap", "vencido", "ajuste"] as const;
+
 // Baja manual de una bacha de PT que nunca se exhibió (descarte, vencimiento o ajuste de stock).
 export async function darDeBajaBachaPt(
   idPartida: number,
@@ -249,7 +263,7 @@ export async function darDeBajaBachaPt(
   observacion: string,
   userBaja: number
 ): Promise<void> {
-  if (!["scrap", "vencido", "ajuste"].includes(motivo)) {
+  if (!(MOTIVOS_BAJA as readonly string[]).includes(motivo)) {
     throw new Error("Elegí el motivo de la baja.");
   }
   const obs = observacion.trim();
