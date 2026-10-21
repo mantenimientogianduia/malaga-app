@@ -6,8 +6,10 @@ import { listPartidasEnObrador } from "../exhibidora/queries";
 import {
   getConfigPcp,
   updateConfigPcp,
-  listDemandaBase,
-  setDemandaBase,
+  listPctDia,
+  setPctDias,
+  listPctSabor,
+  setPctSabores,
   listBachasObrador,
   listBachasExhibidas,
   getStockTeoricoBases,
@@ -17,60 +19,54 @@ import {
   type ConfirmarCierreInput,
 } from "./cierre-queries";
 
+// Cada escenario crea varias filas seguidas contra la base remota: supera los 5 s por defecto de vitest.
+const TIMEOUT_ESCENARIO = 30000;
+
 // malaga.usuarios NO se trunca nunca: es la tabla real de cuentas. Se borra solo la
 // fila de prueba, después de vaciar las tablas que la referencian.
 async function limpiar() {
   await query(
     `TRUNCATE malaga.f_cierre_dia_base, malaga.f_cierre_dia_sabor, malaga.f_cierre_dia_bacha, malaga.f_cierre_dia,
-              malaga.f_pcp_pronostico, malaga.pcp_demanda_base, malaga.f_trazabilidad_op, malaga.f_partidas_stock,
+              malaga.f_pcp_pronostico, malaga.pcp_pct_sabor, malaga.f_trazabilidad_op, malaga.f_partidas_stock,
               malaga.f_ordenes_produccion, malaga.recetas_detalles, malaga.recetas, malaga.d_exhibidora,
               malaga.d_productos RESTART IDENTITY CASCADE`
   );
   await query(`DELETE FROM malaga.usuarios WHERE email = 'cierre@t.com'`);
-  await query(`UPDATE malaga.pcp_config SET margen_pct = 20, dias_cobertura = 3 WHERE id = 1`);
+  await query(`UPDATE malaga.pcp_config SET margen_pct = 20, dias_cobertura = 3, demanda_semanal_kg = 550 WHERE id = 1`);
+  await query(
+    `INSERT INTO malaga.pcp_pct_dia (dia_semana, pct)
+     SELECT d, CASE WHEN d <= 4 THEN 13 ELSE 16 END FROM generate_series(1, 7) AS d
+     ON CONFLICT (dia_semana) DO UPDATE SET pct = EXCLUDED.pct`
+  );
 }
 
-describe("cierre queries — configuración y demanda base", () => {
+// Deja la demanda de un sabor en `kgPorDia` kg para CUALQUIER día de la semana:
+// semana de 100 kg, 100 % para el sabor y `kgPorDia` % para cada día.
+async function configurarDemanda(idProd: number, kgPorDia: number) {
+  await query(`UPDATE malaga.pcp_config SET demanda_semanal_kg = 100 WHERE id = 1`);
+  await query(
+    `INSERT INTO malaga.pcp_pct_sabor (id_prod, pct) VALUES ($1, 100)
+     ON CONFLICT (id_prod) DO UPDATE SET pct = EXCLUDED.pct`,
+    [idProd]
+  );
+  await query(`UPDATE malaga.pcp_pct_dia SET pct = $1`, [kgPorDia]);
+}
+
+describe("cierre queries — configuración", () => {
   beforeEach(limpiar);
   afterEach(limpiar);
 
-  it("getConfigPcp devuelve el margen y los días de cobertura", async () => {
+  it("getConfigPcp devuelve el margen, los días de cobertura y la demanda semanal", async () => {
     const config = await getConfigPcp();
     expect(config.margenPct).toBe(20);
     expect(config.diasCobertura).toBe(3);
+    expect(config.demandaSemanalKg).toBe(550);
   });
 
-  it("updateConfigPcp actualiza el margen y los días de cobertura", async () => {
-    await updateConfigPcp(15, 4);
+  it("updateConfigPcp actualiza el margen, los días de cobertura y la demanda semanal", async () => {
+    await updateConfigPcp(15, 4, 600);
     const config = await getConfigPcp();
-    expect(config.margenPct).toBe(15);
-    expect(config.diasCobertura).toBe(4);
-  });
-
-  it("listDemandaBase trae los sabores de cartilla y programados con 0 por defecto", async () => {
-    const actual = await createProducto({ detalle: "Vainilla", unidMed: "kg", tipoProducto: "PT", pesoEstandar: 4 });
-    const futuro = await createProducto({ detalle: "Chocolate", unidMed: "kg", tipoProducto: "PT", pesoEstandar: 4 });
-    await createProducto({ detalle: "Frutilla", unidMed: "kg", tipoProducto: "PT", pesoEstandar: 4 });
-    await query(
-      `INSERT INTO malaga.d_exhibidora (nro, id_prod, id_prod_fut, ts_cambio_programado)
-       VALUES (1, $1, $2, '2099-01-01')`,
-      [actual.idProd, futuro.idProd]
-    );
-
-    const filas = await listDemandaBase();
-    expect(filas.map((f) => f.detalle)).toEqual(["Chocolate", "Vainilla"]);
-    expect(filas.every((f) => f.kgDia === 0)).toBe(true);
-  });
-
-  it("setDemandaBase crea o actualiza los kg por día de un sabor", async () => {
-    const p = await createProducto({ detalle: "Vainilla", unidMed: "kg", tipoProducto: "PT", pesoEstandar: 4 });
-    await query(`INSERT INTO malaga.d_exhibidora (nro, id_prod) VALUES (1, $1)`, [p.idProd]);
-
-    await setDemandaBase(p.idProd, 12.5);
-    expect((await listDemandaBase())[0].kgDia).toBe(12.5);
-
-    await setDemandaBase(p.idProd, 8);
-    expect((await listDemandaBase())[0].kgDia).toBe(8);
+    expect(config).toMatchObject({ margenPct: 15, diasCobertura: 4, demandaSemanalKg: 600 });
   });
 });
 
@@ -258,13 +254,13 @@ describe("cierre queries — datos del cierre", () => {
     await query(`UPDATE malaga.d_productos SET lote_optimo = 10, lote_minimo = 20 WHERE id_prod = $1`, [semi.idProd]);
     await createReceta({ idProd: pt.idProd, items: [{ idSubprod: semi.idProd, cantSubprod: 2 }], userAlta: userId });
     await query(`INSERT INTO malaga.d_exhibidora (nro, id_prod) VALUES (1, $1)`, [pt.idProd]);
-    await setDemandaBase(pt.idProd, 10);
+    await configurarDemanda(pt.idProd, 10);
     await query(
       `INSERT INTO malaga.f_ordenes_produccion (id_prod, cant_plan, fecha_plan, estado) VALUES ($1, 8, CURRENT_DATE, 'planificada')`,
       [pt.idProd]
     );
 
-    const datos = await getDatosCierre();
+    const datos = await getDatosCierre("2030-01-02");
     expect(datos.margenPct).toBe(20);
     expect(datos.diasCobertura).toBe(3);
     expect(datos.sabores).toHaveLength(1);
@@ -275,6 +271,7 @@ describe("cierre queries — datos del cierre", () => {
       demandaBaseKgDia: 10,
       coccionesPendientes: 8,
     });
+    expect(datos.sabores[0].demandaSiguientesKg).toEqual([10, 10, 10]);
     expect(datos.sabores[0].items).toEqual([{ idSubprod: semi.idProd, cantSubprod: 2 }]);
     expect(datos.bases).toHaveLength(1);
     expect(datos.bases[0]).toMatchObject({
@@ -446,7 +443,7 @@ describe("cierre queries — datos del cierre", () => {
       await query(`INSERT INTO malaga.d_exhibidora (nro, id_prod) VALUES ($1, $2)`, [nro, p.idProd]);
     }
 
-    const datos = await getDatosCierre();
+    const datos = await getDatosCierre("2030-01-02");
     const porId = new Map(datos.sabores.map((x) => [x.idProd, x]));
     expect(datos.sabores).toHaveLength(3);
     expect(porId.get(sinReceta.idProd)!.items).toEqual([]);
@@ -461,7 +458,7 @@ describe("cierre queries — datos del cierre", () => {
       [semi.idProd]
     );
 
-    const datos = await getDatosCierre();
+    const datos = await getDatosCierre("2030-01-02");
     const base = datos.bases.find((b) => b.idProd === semi.idProd)!;
     expect(base.coccionesPendientes).toBe(25);
   });
@@ -470,14 +467,11 @@ describe("cierre queries — datos del cierre", () => {
     const fuera = await createProducto({ detalle: "Fuera de cartilla", unidMed: "kg", tipoProducto: "PT", pesoEstandar: 4 });
     const idPartida = await crearPartidaPt(fuera.idProd, 4, "L1");
 
-    const datos = await getDatosCierre();
+    const datos = await getDatosCierre("2030-01-02");
     expect(datos.sabores).toEqual([]);
     expect(datos.bachasObrador.map((b) => b.idPartida)).toEqual([idPartida]);
   });
 });
-
-// Cada escenario crea varias filas seguidas contra la base remota: supera los 5 s por defecto de vitest.
-const TIMEOUT_ESCENARIO = 30000;
 
 async function escenarioBasico() {
   const userId = await seedUser();
@@ -489,7 +483,7 @@ async function escenarioBasico() {
     `INSERT INTO malaga.d_exhibidora (nro, id_prod) VALUES (1, $1) RETURNING id_exhibidora`,
     [pt.idProd]
   );
-  await setDemandaBase(pt.idProd, 10);
+  await configurarDemanda(pt.idProd, 10);
   const exhibida = await crearPartidaPt(pt.idProd, 4, "EXH");
   await exhibir(exhibida, exhib.rows[0].id_exhibidora, userId);
   const obrador = await crearPartidaPt(pt.idProd, 4, "OBR");
@@ -681,9 +675,14 @@ describe("cierre queries — confirmar cierre", () => {
 
   it("hace rollback de todo si falla DENTRO de la transacción (después de insertar el cierre y sus bachas)", async () => {
     const e = await escenarioBasico();
-    // Una demanda enorme pasa todas las validaciones y desborda el NUMERIC(12,3) de la OP de fabricación:
-    // el error ocurre dentro de la transacción, después de insertar f_cierre_dia y f_cierre_dia_bacha.
-    await setDemandaBase(e.pt.idProd, 900000000);
+    // Una demanda enorme (el máximo de la configuración, 100 % del sabor y del día) con un peso estándar
+    // mínimo da una cantidad de bachas que desborda el INTEGER de f_cierre_dia_sabor: pasa todas las
+    // validaciones y el error ocurre dentro de la transacción, después de insertar f_cierre_dia y
+    // f_cierre_dia_bacha.
+    await query(`UPDATE malaga.pcp_config SET demanda_semanal_kg = 99999999.99 WHERE id = 1`);
+    await query(`UPDATE malaga.pcp_pct_sabor SET pct = 100 WHERE id_prod = $1`, [e.pt.idProd]);
+    await query(`UPDATE malaga.pcp_pct_dia SET pct = 100`);
+    await query(`UPDATE malaga.d_productos SET peso_estandar = 0.001 WHERE id_prod = $1`, [e.pt.idProd]);
 
     await expect(confirmarCierre(entradaCierre(e))).rejects.toThrow(
       /overflow|out of range/i
@@ -718,7 +717,7 @@ describe("cierre queries — confirmar cierre", () => {
     const userId = await seedUser();
     const sinPeso = await createProducto({ detalle: "Sin peso", unidMed: "kg", tipoProducto: "SEMI" });
     await query(`INSERT INTO malaga.d_exhibidora (nro, id_prod) VALUES (1, $1)`, [sinPeso.idProd]);
-    await setDemandaBase(sinPeso.idProd, 10);
+    await configurarDemanda(sinPeso.idProd, 10);
 
     const r = await confirmarCierre(entradaMinima(userId, { stockReal: { [sinPeso.idProd]: 0 } }));
 
@@ -848,5 +847,73 @@ describe("cierre queries — plan del día", () => {
     expect(plan.cierre!.idCierre).toBe(segundo.idCierre);
     expect(plan.descongelar).toEqual([{ idProd: e.semi.idProd, detalle: "Base Media", descongelar: 1, faltante: 3 }]);
     expect(plan.fabricar).toHaveLength(1);
+  }, TIMEOUT_ESCENARIO);
+});
+
+describe("cierre queries — demanda semanal", () => {
+  beforeEach(limpiar);
+  afterEach(limpiar);
+
+  it("listPctDia devuelve 7 valores de lunes a domingo y setPctDias los guarda", async () => {
+    expect(await listPctDia()).toEqual([13, 13, 13, 13, 16, 16, 16]);
+    await setPctDias([10, 10, 10, 10, 20, 20, 20]);
+    expect(await listPctDia()).toEqual([10, 10, 10, 10, 20, 20, 20]);
+  }, TIMEOUT_ESCENARIO);
+
+  it("listPctSabor trae los sabores de la cartilla y programados con 0 por defecto", async () => {
+    const actual = await createProducto({ detalle: "Vainilla", unidMed: "kg", tipoProducto: "PT", pesoEstandar: 4 });
+    const futuro = await createProducto({ detalle: "Chocolate", unidMed: "kg", tipoProducto: "PT", pesoEstandar: 4 });
+    await createProducto({ detalle: "Frutilla", unidMed: "kg", tipoProducto: "PT", pesoEstandar: 4 });
+    await query(
+      `INSERT INTO malaga.d_exhibidora (nro, id_prod, id_prod_fut, ts_cambio_programado) VALUES (1, $1, $2, '2099-01-01')`,
+      [actual.idProd, futuro.idProd]
+    );
+
+    const filas = await listPctSabor();
+    expect(filas.map((f) => [f.detalle, f.pct])).toEqual([
+      ["Chocolate", 0],
+      ["Vainilla", 0],
+    ]);
+    expect(filas[0].pesoEstandar).toBe(4);
+  }, TIMEOUT_ESCENARIO);
+
+  it("setPctSabores crea o actualiza los porcentajes", async () => {
+    const a = await createProducto({ detalle: "Vainilla", unidMed: "kg", tipoProducto: "PT", pesoEstandar: 4 });
+    const b = await createProducto({ detalle: "Chocolate", unidMed: "kg", tipoProducto: "PT", pesoEstandar: 4 });
+    await query(`INSERT INTO malaga.d_exhibidora (nro, id_prod) VALUES (1, $1), (2, $2)`, [a.idProd, b.idProd]);
+
+    await setPctSabores([{ idProd: a.idProd, pct: 6 }, { idProd: b.idProd, pct: 4.5 }]);
+    expect((await listPctSabor()).map((f) => f.pct)).toEqual([4.5, 6]); // Chocolate, Vainilla
+
+    await setPctSabores([{ idProd: a.idProd, pct: 7.25 }]);
+    const vainilla = (await listPctSabor()).find((f) => f.idProd === a.idProd)!;
+    expect(vainilla.pct).toBe(7.25);
+  }, TIMEOUT_ESCENARIO);
+
+  it("getDatosCierre arma la demanda del día del plan y de los días siguientes", async () => {
+    const pt = await createProducto({ detalle: "Vainilla", unidMed: "kg", tipoProducto: "PT", pesoEstandar: 4 });
+    await query(`INSERT INTO malaga.d_exhibidora (nro, id_prod) VALUES (1, $1)`, [pt.idProd]);
+    await updateConfigPcp(20, 3, 700);
+    await setPctSabores([{ idProd: pt.idProd, pct: 50 }]);
+
+    // Jueves 2030-01-03: 700 × 50 % × 13 % = 45,5; los 3 días siguientes (vie, sáb, dom) son 16 %: 56.
+    const jueves = await getDatosCierre("2030-01-03");
+    expect(jueves.sabores[0].demandaBaseKgDia).toBeCloseTo(45.5, 5);
+    expect(jueves.sabores[0].demandaSiguientesKg).toEqual([56, 56, 56]);
+
+    // Lunes 2030-01-07: 45,5; los siguientes (mar, mié, jue) son 13 %: 45,5.
+    const lunes = await getDatosCierre("2030-01-07");
+    expect(lunes.sabores[0].demandaBaseKgDia).toBeCloseTo(45.5, 5);
+    expect(lunes.sabores[0].demandaSiguientesKg).toEqual([45.5, 45.5, 45.5]);
+  }, TIMEOUT_ESCENARIO);
+
+  it("la ventana de cobertura fraccionaria incluye un día más con su peso", async () => {
+    const pt = await createProducto({ detalle: "Vainilla", unidMed: "kg", tipoProducto: "PT", pesoEstandar: 4 });
+    await query(`INSERT INTO malaga.d_exhibidora (nro, id_prod) VALUES (1, $1)`, [pt.idProd]);
+    await updateConfigPcp(20, 2.5, 700);
+    await setPctSabores([{ idProd: pt.idProd, pct: 100 }]);
+
+    const datos = await getDatosCierre("2030-01-03");
+    expect(datos.sabores[0].demandaSiguientesKg).toHaveLength(3);
   }, TIMEOUT_ESCENARIO);
 });

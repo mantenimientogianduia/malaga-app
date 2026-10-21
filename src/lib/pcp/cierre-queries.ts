@@ -5,46 +5,71 @@ import {
   getItemsRecetaSemiPorProducto,
 } from "./queries";
 import { sumarDias } from "./fechas";
+import { demandaDiaSabor, diaSemanaDeFecha, pesosCobertura } from "./demanda";
 import { calcularCierre, type SaborCierre, type StockSabor } from "./cierre-calc";
 
 export interface ConfigPcp {
   margenPct: number;
   diasCobertura: number;
+  demandaSemanalKg: number;
 }
 
 export async function getConfigPcp(): Promise<ConfigPcp> {
-  const result = await query<{ margen_pct: string; dias_cobertura: string }>(
-    `SELECT margen_pct, dias_cobertura FROM malaga.pcp_config WHERE id = 1`
+  const result = await query<{ margen_pct: string; dias_cobertura: string; demanda_semanal_kg: string }>(
+    `SELECT margen_pct, dias_cobertura, demanda_semanal_kg FROM malaga.pcp_config WHERE id = 1`
   );
   const row = result.rows[0];
-  return { margenPct: Number(row.margen_pct), diasCobertura: Number(row.dias_cobertura) };
+  return {
+    margenPct: Number(row.margen_pct),
+    diasCobertura: Number(row.dias_cobertura),
+    demandaSemanalKg: Number(row.demanda_semanal_kg),
+  };
 }
 
-export async function updateConfigPcp(margenPct: number, diasCobertura: number): Promise<void> {
-  await query(`UPDATE malaga.pcp_config SET margen_pct = $1, dias_cobertura = $2 WHERE id = 1`, [
-    margenPct,
-    diasCobertura,
-  ]);
+export async function updateConfigPcp(
+  margenPct: number,
+  diasCobertura: number,
+  demandaSemanalKg: number
+): Promise<void> {
+  await query(
+    `UPDATE malaga.pcp_config SET margen_pct = $1, dias_cobertura = $2, demanda_semanal_kg = $3 WHERE id = 1`,
+    [margenPct, diasCobertura, demandaSemanalKg]
+  );
 }
 
-export interface DemandaBaseFila {
+// % de cada día de la semana, de lunes (índice 0) a domingo (índice 6).
+export async function listPctDia(): Promise<number[]> {
+  const result = await query<{ dia_semana: number; pct: string }>(
+    `SELECT dia_semana, pct FROM malaga.pcp_pct_dia ORDER BY dia_semana`
+  );
+  const pcts = new Array<number>(7).fill(0);
+  for (const r of result.rows) pcts[r.dia_semana - 1] = Number(r.pct);
+  return pcts;
+}
+
+// Guarda los 7 % de una sola vez (índice 0 = lunes).
+export async function setPctDias(pcts: number[]): Promise<void> {
+  await query(
+    `INSERT INTO malaga.pcp_pct_dia (dia_semana, pct)
+     SELECT d, p FROM unnest($1::int[], $2::numeric[]) AS t(d, p)
+     ON CONFLICT (dia_semana) DO UPDATE SET pct = EXCLUDED.pct`,
+    [pcts.map((_, i) => i + 1), pcts]
+  );
+}
+
+export interface PctSaborFila {
   idProd: number;
   detalle: string;
   pesoEstandar: number | null;
-  kgDia: number;
+  pct: number;
 }
 
-// Sabores en cartilla o programados a entrar, con sus kg/día (0 si todavía no se cargó).
-export async function listDemandaBase(): Promise<DemandaBaseFila[]> {
-  const result = await query<{
-    id_prod: number;
-    detalle: string;
-    peso_estandar: string | null;
-    kg_dia: string;
-  }>(
-    `SELECT p.id_prod, p.detalle, p.peso_estandar, COALESCE(d.kg_dia, 0) AS kg_dia
+// Sabores en cartilla o programados a entrar, con su % de venta (0 si todavía no se cargó).
+export async function listPctSabor(): Promise<PctSaborFila[]> {
+  const result = await query<{ id_prod: number; detalle: string; peso_estandar: string | null; pct: string }>(
+    `SELECT p.id_prod, p.detalle, p.peso_estandar, COALESCE(s.pct, 0) AS pct
      FROM malaga.d_productos p
-     LEFT JOIN malaga.pcp_demanda_base d ON d.id_prod = p.id_prod
+     LEFT JOIN malaga.pcp_pct_sabor s ON s.id_prod = p.id_prod
      WHERE p.id_prod IN (
        SELECT id_prod FROM malaga.d_exhibidora
        UNION
@@ -56,15 +81,17 @@ export async function listDemandaBase(): Promise<DemandaBaseFila[]> {
     idProd: r.id_prod,
     detalle: r.detalle,
     pesoEstandar: r.peso_estandar === null ? null : Number(r.peso_estandar),
-    kgDia: Number(r.kg_dia),
+    pct: Number(r.pct),
   }));
 }
 
-export async function setDemandaBase(idProd: number, kgDia: number): Promise<void> {
+export async function setPctSabores(items: { idProd: number; pct: number }[]): Promise<void> {
+  if (items.length === 0) return;
   await query(
-    `INSERT INTO malaga.pcp_demanda_base (id_prod, kg_dia) VALUES ($1, $2)
-     ON CONFLICT (id_prod) DO UPDATE SET kg_dia = EXCLUDED.kg_dia`,
-    [idProd, kgDia]
+    `INSERT INTO malaga.pcp_pct_sabor (id_prod, pct)
+     SELECT i, p FROM unnest($1::int[], $2::numeric[]) AS t(i, p)
+     ON CONFLICT (id_prod) DO UPDATE SET pct = EXCLUDED.pct`,
+    [items.map((i) => i.idProd), items.map((i) => i.pct)]
   );
 }
 
@@ -231,25 +258,32 @@ export interface DatosCierre {
   bases: BaseDatos[];
 }
 
-// Todo lo que necesita la pantalla de cierre. Es serializable (se pasa a un componente cliente).
-export async function getDatosCierre(): Promise<DatosCierre> {
-  const [config, demanda, pendientes, bachasObrador, bachasExhibidas, bases] = await Promise.all([
+// Todo lo que necesita la pantalla de cierre para planificar `fechaPlan`. Es serializable.
+export async function getDatosCierre(fechaPlan: string): Promise<DatosCierre> {
+  const [config, pctSabor, pctDia, pendientes, bachasObrador, bachasExhibidas, bases] = await Promise.all([
     getConfigPcp(),
-    listDemandaBase(),
+    listPctSabor(),
+    listPctDia(),
     getCoccionesPendientesPorProducto(),
     listBachasObrador(),
     listBachasExhibidas(),
     getStockTeoricoBases(),
   ]);
-  const itemsPorSabor = await getItemsRecetaSemiPorProducto(demanda.map((d) => d.idProd));
+  const itemsPorSabor = await getItemsRecetaSemiPorProducto(pctSabor.map((s) => s.idProd));
 
-  const sabores: SaborCierre[] = demanda.map((d) => ({
-    idProd: d.idProd,
-    detalle: d.detalle,
-    pesoEstandar: d.pesoEstandar,
-    demandaBaseKgDia: d.kgDia,
-    coccionesPendientes: pendientes.get(d.idProd) ?? 0,
-    items: (itemsPorSabor.get(d.idProd) ?? []).map((i) => ({
+  const pctDelDia = (fecha: string) => pctDia[diaSemanaDeFecha(fecha) - 1] ?? 0;
+  const diasVentana = pesosCobertura(config.diasCobertura).length;
+
+  const sabores: SaborCierre[] = pctSabor.map((s) => ({
+    idProd: s.idProd,
+    detalle: s.detalle,
+    pesoEstandar: s.pesoEstandar,
+    demandaBaseKgDia: demandaDiaSabor(config.demandaSemanalKg, s.pct, pctDelDia(fechaPlan)),
+    demandaSiguientesKg: Array.from({ length: diasVentana }, (_, k) =>
+      demandaDiaSabor(config.demandaSemanalKg, s.pct, pctDelDia(sumarDias(fechaPlan, k + 1)))
+    ),
+    coccionesPendientes: pendientes.get(s.idProd) ?? 0,
+    items: (itemsPorSabor.get(s.idProd) ?? []).map((i) => ({
       idSubprod: i.idSubprod,
       cantSubprod: Number(i.cantSubprod),
     })),
@@ -390,7 +424,7 @@ export async function confirmarCierre(input: ConfirmarCierreInput): Promise<Resu
     // Un solo cierre a la vez: el que llega segundo espera acá y recién después lee los datos, así que
     // ve las OPs y los stocks que dejó el primero (getDatosCierre usa el pool y lee lo ya commiteado).
     await client.query("SELECT pg_advisory_xact_lock(hashtext('pcp_cierre_dia'))");
-    const datos = await getDatosCierre();
+    const datos = await getDatosCierre(input.fechaPlan);
 
     const pctPorPartida = new Map(input.pctBachas.map((p) => [p?.idPartida, p?.pct]));
     if (datos.bachasExhibidas.some((b) => !pctPorPartida.has(b.idPartida))) {
