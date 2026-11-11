@@ -1,7 +1,7 @@
 "use client";
 
 import { startTransition, useState } from "react";
-import type { PuntoConEstadoHoy, SaborExhibido } from "@/lib/temperaturas/queries";
+import type { MedicionHoy, PuntoTemperatura, SaborExhibido } from "@/lib/temperaturas/queries";
 import {
   PASO_TEMPERATURA,
   TEMPERATURA_INICIAL,
@@ -13,6 +13,7 @@ type Analisis = "ok" | "no_ok" | null;
 
 export function FormularioRegistro({
   punto,
+  medicion,
   sabores,
   tempMin,
   tempMax,
@@ -20,7 +21,9 @@ export function FormularioRegistro({
   pending,
   formAction,
 }: {
-  punto: PuntoConEstadoHoy;
+  punto: PuntoTemperatura;
+  // Si viene, se edita esa medición; si no, se carga una nueva.
+  medicion?: MedicionHoy;
   sabores: SaborExhibido[];
   tempMin: string;
   tempMax: string;
@@ -28,12 +31,12 @@ export function FormularioRegistro({
   pending: boolean;
   formAction: (payload: FormData) => void;
 }) {
-  const [idProd, setIdProd] = useState(punto.idProdHoy !== null ? String(punto.idProdHoy) : "");
-  const [temperatura, setTemperatura] = useState(punto.temperaturaHoy ?? TEMPERATURA_INICIAL.toFixed(1));
+  const [idProd, setIdProd] = useState(medicion?.idProd != null ? String(medicion.idProd) : "");
+  const [temperatura, setTemperatura] = useState(medicion?.temperatura ?? TEMPERATURA_INICIAL.toFixed(1));
   const [analisis, setAnalisis] = useState<Analisis>(
-    punto.analisisOkHoy === null ? null : punto.analisisOkHoy ? "ok" : "no_ok"
+    !medicion || medicion.analisisOk === null ? null : medicion.analisisOk ? "ok" : "no_ok"
   );
-  const [observacion, setObservacion] = useState(punto.observacionHoy ?? "");
+  const [observacion, setObservacion] = useState(medicion?.observacion ?? "");
 
   const valor = parsearTemperatura(temperatura);
   const mover = (delta: number) =>
@@ -57,6 +60,7 @@ export function FormularioRegistro({
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-3">
       <input type="hidden" name="idPunto" value={punto.idPunto} />
+      {medicion && <input type="hidden" name="idRegistro" value={medicion.idRegistro} />}
       <input type="hidden" name="analisis" value={analisis ?? ""} />
 
       <label className="flex flex-col gap-1 text-sm text-ink">
@@ -164,7 +168,7 @@ export function FormularioRegistro({
         disabled={pending || !completo}
         className="min-h-11 self-start rounded-md bg-copper px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
       >
-        {pending ? "Guardando..." : "Guardar"}
+        {pending ? "Guardando..." : medicion ? "Guardar cambios" : "Guardar medición"}
       </button>
     </form>
   );

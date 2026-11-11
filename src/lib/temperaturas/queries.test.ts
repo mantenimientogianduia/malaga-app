@@ -6,6 +6,7 @@ import {
   updateConfigTemperaturas,
   listPuntosConEstadoHoy,
   registrarTemperatura,
+  editarTemperatura,
   listHistorialReciente,
   getResumen30Dias,
   deshacerRegistroTemperatura,
@@ -32,7 +33,8 @@ describe("temperaturas queries — base", () => {
     // junto con cualquier registro que la haya referenciado (FK user_registro), para poder
     // borrar el usuario sin violar la constraint.
     await query(
-      `DELETE FROM malaga.f_registro_temperaturas WHERE user_registro IN (SELECT id_user FROM malaga.usuarios WHERE email = 't-temp@t.com')`
+      `DELETE FROM malaga.f_registro_temperaturas WHERE user_registro IN (SELECT id_user FROM malaga.usuarios WHERE email = 't-temp@t.com')
+         OR user_edicion IN (SELECT id_user FROM malaga.usuarios WHERE email = 't-temp@t.com')`
     );
     await query(
       `DELETE FROM malaga.f_cierre_temperaturas WHERE user_cierre IN (SELECT id_user FROM malaga.usuarios WHERE email = 't-temp@t.com')`
@@ -123,7 +125,7 @@ describe("temperaturas queries — base", () => {
     expect(fila.rows[0].user_registro).toBe(userRegistro);
   });
 
-  it("registrarTemperatura edita el valor si el punto ya tiene registro de hoy y el día está abierto", async () => {
+  it("registrarTemperatura agrega una medición nueva aunque el punto ya tenga una hoy", async () => {
     const userRegistro = await seedUser();
     const idProd = await seedSabor();
     const [punto] = await listPuntos();
@@ -131,19 +133,13 @@ describe("temperaturas queries — base", () => {
     const primero = await registrarTemperatura(punto.idPunto, -13.5, userRegistro, detalleOk(idProd));
     const segundo = await registrarTemperatura(punto.idPunto, -13.0, userRegistro, detalleOk(idProd));
 
-    expect(segundo.idRegistro).toBe(primero.idRegistro);
+    expect(segundo.idRegistro).not.toBe(primero.idRegistro);
 
-    const fila = await query<{ temperatura: string }>(
-      `SELECT temperatura FROM malaga.f_registro_temperaturas WHERE id_registro = $1`,
-      [primero.idRegistro]
-    );
-    expect(fila.rows[0].temperatura).toBe("-13.0");
-
-    const count = await query<{ count: string }>(
-      `SELECT COUNT(*) FROM malaga.f_registro_temperaturas WHERE id_punto = $1`,
+    const filas = await query<{ temperatura: string }>(
+      `SELECT temperatura FROM malaga.f_registro_temperaturas WHERE id_punto = $1 ORDER BY id_registro`,
       [punto.idPunto]
     );
-    expect(Number(count.rows[0].count)).toBe(1);
+    expect(filas.rows.map((f) => f.temperatura)).toEqual(["-13.5", "-13.0"]);
   });
 
   it("registrarTemperatura rechaza cargar o editar si el día ya está cerrado", async () => {
@@ -153,6 +149,18 @@ describe("temperaturas queries — base", () => {
     await cerrarDia(userRegistro);
 
     await expect(registrarTemperatura(punto.idPunto, -13.0, userRegistro, detalleOk(idProd))).rejects.toThrow(
+      "El día ya está cerrado y firmado. Reabrilo para poder cargar o editar."
+    );
+  });
+
+  it("editarTemperatura rechaza editar si el día ya está cerrado", async () => {
+    const userRegistro = await seedUser();
+    const idProd = await seedSabor();
+    const [punto] = await listPuntos();
+    const { idRegistro } = await registrarTemperatura(punto.idPunto, -13.0, userRegistro, detalleOk(idProd));
+    await cerrarDia(userRegistro);
+
+    await expect(editarTemperatura(idRegistro, -12.0, userRegistro, detalleOk(idProd))).rejects.toThrow(
       "El día ya está cerrado y firmado. Reabrilo para poder cargar o editar."
     );
   });
@@ -336,13 +344,12 @@ describe("temperaturas queries — base", () => {
     const [punto] = await listPuntos();
 
     const primero = await registrarTemperatura(punto.idPunto, -12, userRegistro, detalleOk(vainilla));
-    const segundo = await registrarTemperatura(punto.idPunto, -9, userRegistro, {
+    await editarTemperatura(primero.idRegistro, -9, userRegistro, {
       idProd: chocolate,
       analisisOk: false,
       observacion: "con cristales",
     });
 
-    expect(segundo.idRegistro).toBe(primero.idRegistro);
     const fila = await query<{ id_prod: number; analisis_ok: boolean; observacion: string }>(
       `SELECT id_prod, analisis_ok, observacion FROM malaga.f_registro_temperaturas WHERE id_registro = $1`,
       [primero.idRegistro]
@@ -452,7 +459,7 @@ describe("temperaturas queries — base", () => {
       analisisOk: false,
       observacion: "con cristales",
     });
-    await registrarTemperatura(punto.idPunto, -12, userRegistro, {
+    await editarTemperatura(primero.idRegistro, -12, userRegistro, {
       idProd,
       analisisOk: true,
       observacion: "esto se descarta",

@@ -1,6 +1,7 @@
 import { requireRole } from "@/lib/auth/requireRole";
 import {
   listPuntosConEstadoHoy,
+  listMedicionesHoy,
   getConfigTemperaturas,
   listHistorialReciente,
   getResumen30Dias,
@@ -17,8 +18,9 @@ export default async function TemperaturasPage() {
   const user = await requireRole(["gestion", "admin", "produccion"]);
 
   const config = await getConfigTemperaturas();
-  const [puntos, historial, resumen, cierre, sabores] = await Promise.all([
+  const [puntos, mediciones, historial, resumen, cierre, sabores] = await Promise.all([
     listPuntosConEstadoHoy(config),
+    listMedicionesHoy(config),
     listHistorialReciente(config),
     getResumen30Dias(config),
     getCierreHoy(),
@@ -54,6 +56,7 @@ export default async function TemperaturasPage() {
 
       <GrillaTemperaturas
         puntos={puntos}
+        mediciones={mediciones}
         sabores={sabores}
         tempMin={config.tempMin}
         tempMax={config.tempMax}
